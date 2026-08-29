@@ -1,45 +1,117 @@
-# UCS503P Project Template
+# BharatAssist
 
-This is a project template for UCS503P Project (2026-27
-ODD). 
+### AI-Powered Government Services Assistant
 
-There are 3 reports in LaTeX format, namely *a*)
-Project Proposal, *b*) Project Report Prototype Stage,
-and *c*) Project Report Final -- each in their
-respective folders.
+BharatAssist is a citizen-focused AI assistant designed to make Indian government services, schemes, procedures, and official information easier to discover and understand.
 
-Journals are stacked under the folder `journals`, one
-folder for each team member.  A sample entry has been
-made for example.
+The project combines a modern web interface with AI-powered responses, Retrieval-Augmented Generation (RAG), government service information, and document simplification to provide users with clear and accessible guidance.
 
-The source code is contained within the folder `code`.
+---
 
-The documentation is under folder `docs`.
+##  Project Objective
 
-All other aspects of code organisation are left to the
-discretion of the user(s).
+Government websites and official documents often contain complex procedures, technical language, and information spread across multiple sources.
 
+BharatAssist aims to simplify this experience by providing:
 
-## Docs
+- Easy access to government services
+- Clear explanations of procedures and requirements
+- AI-assisted question answering
+- Retrieval of relevant government information
+- Simplification of government documents
+- A clean and accessible user interface
 
-As of now, the `docs` is just an organised collection
-of markdown (`md`) files.  But the build procedure is
-using [`mkdocs`](https://google.com/search?q=mkdocs)
-backend.  As a result, any commit into the `master`
-branch of github repository would result in CI/CD based
-build and deployment of the documentation including the
-journals.
+---
 
-For a local DEV-version of the docs for viewing and
-testing, install the local env and issue the following
-command:
+## Key Features
 
-``` shell
-make docs
-```
+### Government Services
 
-### Local `env` for `docs`
+BharatAssist provides information about a growing collection of Indian government services, including:
 
-``` shell
+- Service descriptions
+- Eligibility information
+- Required documents
+- Application procedures
+- Fees and related information
+- Official sources
 
-```
+The current prototype includes approximately **20 government services**.
+
+### AI-Powered Assistant
+
+The application uses Google's Generative AI capabilities to provide natural-language assistance.
+
+Users can ask questions in a conversational way and receive responses based on the available government service information.
+
+### Retrieval-Augmented Generation (RAG)
+
+BharatAssist uses a RAG-based approach to improve the relevance of generated answers.
+
+The system:
+
+1. Receives the user's query
+2. Retrieves relevant information from the service knowledge base
+3. Provides the retrieved context to the AI model
+4. Generates a response grounded in the available information
+
+### 📄 Document Guide
+
+Users can provide government documents through:
+
+- Pasted text
+- PDF files
+- DOCX files
+- TXT files
+
+The Document Guide processes the content and produces a simpler, easier-to-understand summary.
+
+### Modern User Interface
+
+The frontend has been redesigned to provide:
+
+- Modern card-based layouts
+- Improved navigation
+- Responsive design
+- Clear visual hierarchy
+- Better forms and buttons
+- Improved document upload experience
+- Mobile-friendly layouts
+
+---
+
+## Project Structure
+
+```text
+BharatAssist/
+│
+├── assets/
+│   └── Static assets and project resources
+│
+├── code/
+│   └── Application source code
+│
+├── docs/
+│   ├── ROADMAP.md
+│   ├── architecture.md
+│   ├── evaluation.md
+│   ├── requirements.md
+│   ├── testing.md
+│   └── BharatAssist_Week1_Progress.pptx
+│
+├── journals/
+│   └── Individual team member progress journals
+│
+├── project-proposal/
+│   └── Project proposal documents
+│
+├── project-report-final/
+│   └── Final project documentation
+│
+├── project-report-prototype-stage/
+│   └── Prototype-stage documentation
+│
+├── .gitignore
+├── Makefile
+├── README.md
+└── pyproject.toml
