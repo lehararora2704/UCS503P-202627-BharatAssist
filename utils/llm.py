@@ -13,7 +13,7 @@ MODEL_NAME = "gemini-2.5-flash"
 def _get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=os.environ.get("yourkey", ""))
+        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
     return _client
 
 SIMPLIFY_PROMPT = """You are simplifying a legal/government document for an average citizen \

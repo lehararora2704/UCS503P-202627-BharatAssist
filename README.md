@@ -1,117 +1,83 @@
-# BharatAssist
+# BharatAssist — Starter Codebase
 
-### AI-Powered Government Services Assistant
+This is a working scaffold for the "Lite" architecture we discussed: **no login/auth**,
+**public LLM (Gemini)**, **RAG-grounded assistant**, **basic PII redaction**.
+It's tested and runs — you build features on top of this, not from scratch.
 
-BharatAssist is a citizen-focused AI assistant designed to make Indian government services, schemes, procedures, and official information easier to discover and understand.
+## What's already built and working
+- Flask app with 3 core pages: Service Search, Document Simplifier, AI Assistant
+- SQLite database (swap for Postgres later if you deploy — see roadmap)
+- RAG pipeline: ChromaDB + sentence-transformers (`all-MiniLM-L6-v2`)
+- Gemini API wrapper (using the current `google-genai` SDK, not the deprecated one)
+- Basic PII redaction (Aadhaar, PAN, phone, email patterns) before any text hits the LLM
+- Confidence threshold on the assistant — if retrieval isn't confident, it says so instead of guessing
+- 5 sample seeded government services (PAN, passport, ration card, income certificate, driving licence)
+- GitHub Actions CI (lint + test) already wired up
+- IRT (Information Retrieval Time) logging built into the search endpoint, per your evaluation metric
 
-The project combines a modern web interface with AI-powered responses, Retrieval-Augmented Generation (RAG), government service information, and document simplification to provide users with clear and accessible guidance.
+## Setup
 
----
+```bash
+cd bharatassist
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
 
-##  Project Objective
+cp .env.example .env
+# edit .env and paste your Gemini API key (free at https://aistudio.google.com/apikey)
 
-Government websites and official documents often contain complex procedures, technical language, and information spread across multiple sources.
+python app.py                   # creates the DB on first run
+python seed_data.py             # loads sample services + builds RAG index (run once)
+python app.py                   # run again to start the server
+```
 
-BharatAssist aims to simplify this experience by providing:
+Visit `http://localhost:5000`.
 
-- Easy access to government services
-- Clear explanations of procedures and requirements
-- AI-assisted question answering
-- Retrieval of relevant government information
-- Simplification of government documents
-- A clean and accessible user interface
+## Roadmap — what to build next, in order
 
----
+### Week 1 (Days 1–7): make it real
+1. **Replace/expand seed data** — the 5 sample services in `seed_data.py` are placeholders.
+   Research and add 10–15 real services relevant to your pilot users. Keep the same fields
+   (eligibility, documents, steps, fees, processing time, source URL) so nothing else breaks.
+2. **Test the simplifier on a real document** — find an actual government notice/legal PDF,
+   run it through `/simplify`, and tune `SIMPLIFY_PROMPT` in `utils/llm.py` based on output quality.
+3. **Test the assistant end-to-end** — ask it questions covered by your seeded services, confirm
+   it grounds answers correctly, and confirm it says "I don't know" for out-of-scope questions.
+4. **Push to GitHub, confirm CI runs** — the workflow in `.github/workflows/ci.yml` runs on every push.
 
-## Key Features
+### Week 2 (Days 8–14): polish + deploy
+5. **Improve the confidence threshold** — the `CONFIDENCE_THRESHOLD = 0.35` in `app.py` is a guess.
+   Test it against real queries and tune it based on when the assistant should vs. shouldn't answer.
+6. **Add IRT dashboard** — you're already logging `search_logs`; add a small admin page or script
+   to compute average IRT from that table, since it's your primary evaluation metric.
+7. **Mobile/responsive check** — test on a phone-sized viewport; Bootstrap handles most of this
+   already, but check the assistant chat window and upload form specifically.
+8. **Deploy to Render** — connect your GitHub repo, set `GEMINI_API_KEY` as an environment
+   variable in Render's dashboard, point the build at `requirements.txt` and start command
+   `gunicorn app:app` (add `gunicorn` to requirements.txt for production).
 
-### Government Services
+### After the pilot (subsequent deliverables)
+9. Multilingual support — translate `SIMPLIFY_PROMPT`/`ASSISTANT_PROMPT` instructions, or detect
+   input language and ask Gemini to respond in kind (it already supports this reasonably well
+   with a small prompt tweak).
+10. Document checklist generator — reuses the same RAG index, new prompt template.
+11. Login/history — only add if your rubric requires it. If you do, keep LLM calls anonymous
+    (don't pass user identity into the prompt) even though the user is logged in — see
+    `utils/llm.py` comments for the Ollama fallback stub if you're required to self-host at that point.
 
-BharatAssist provides information about a growing collection of Indian government services, including:
+## File map
+```
+app.py                  Flask routes
+utils/redact.py          PII redaction (regex-based)
+utils/llm.py             Gemini API calls (simplify + assistant)
+utils/rag.py             ChromaDB + embeddings
+seed_data.py             Sample service data + RAG indexing
+templates/                Bootstrap-based HTML pages
+.github/workflows/ci.yml  CI: lint + test on every push
+tests/test_app.py         Starter smoke tests — expand these as you add features
+```
 
-- Service descriptions
-- Eligibility information
-- Required documents
-- Application procedures
-- Fees and related information
-- Official sources
-
-The current prototype includes approximately **20 government services**.
-
-### AI-Powered Assistant
-
-The application uses Google's Generative AI capabilities to provide natural-language assistance.
-
-Users can ask questions in a conversational way and receive responses based on the available government service information.
-
-### Retrieval-Augmented Generation (RAG)
-
-BharatAssist uses a RAG-based approach to improve the relevance of generated answers.
-
-The system:
-
-1. Receives the user's query
-2. Retrieves relevant information from the service knowledge base
-3. Provides the retrieved context to the AI model
-4. Generates a response grounded in the available information
-
-### 📄 Document Guide
-
-Users can provide government documents through:
-
-- Pasted text
-- PDF files
-- DOCX files
-- TXT files
-
-The Document Guide processes the content and produces a simpler, easier-to-understand summary.
-
-### Modern User Interface
-
-The frontend has been redesigned to provide:
-
-- Modern card-based layouts
-- Improved navigation
-- Responsive design
-- Clear visual hierarchy
-- Better forms and buttons
-- Improved document upload experience
-- Mobile-friendly layouts
-
----
-
-## Project Structure
-
-```text
-BharatAssist/
-│
-├── assets/
-│   └── Static assets and project resources
-│
-├── code/
-│   └── Application source code
-│
-├── docs/
-│   ├── ROADMAP.md
-│   ├── architecture.md
-│   ├── evaluation.md
-│   ├── requirements.md
-│   ├── testing.md
-│   └── BharatAssist_Week1_Progress.pptx
-│
-├── journals/
-│   └── Individual team member progress journals
-│
-├── project-proposal/
-│   └── Project proposal documents
-│
-├── project-report-final/
-│   └── Final project documentation
-│
-├── project-report-prototype-stage/
-│   └── Prototype-stage documentation
-│
-├── .gitignore
-├── Makefile
-├── README.md
-└── pyproject.toml
+## Known limitations (be upfront about these in your report)
+- PII redaction is regex-based, not exhaustive — document this as a v1 limitation, not a solved problem
+- Confidence threshold for RAG grounding needs real tuning against pilot data, not just the placeholder value
+- No persistence of uploaded documents (by design, for privacy) — if you need audit logs later, add that deliberately with clear disclosure to users
