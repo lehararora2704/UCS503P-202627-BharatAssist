@@ -1763,9 +1763,9 @@ def api_assistant():
 
             return jsonify({
                 "answer": answer,
-                "sources": sources
+                "sources": sources,
+                "context_service": "PM-KISAN"
             })
-
         # ====================================================
         # 11. NO MATCH
         # ====================================================
@@ -1936,7 +1936,11 @@ def api_assistant():
 
         return jsonify({
             "answer": answer,
-            "sources": sources
+            "sources": sources,
+            "context_service": session.get(
+                "assistant_context",
+                {}
+            ).get("service")
         })
 
     except Exception as e:
@@ -1950,6 +1954,43 @@ def api_assistant():
             "error": (
                 "Assistant could not process "
                 "the request."
+            )
+        }), 500
+    # ============================================================
+# CLEAR ASSISTANT CONVERSATION
+# ============================================================
+
+@app.route(
+    "/api/assistant/clear",
+    methods=["POST"]
+)
+def clear_assistant_conversation():
+
+    try:
+        # Remove the stored follow-up context
+        session.pop(
+            "assistant_context",
+            None
+        )
+
+        session.modified = True
+
+        return jsonify({
+            "success": True,
+            "message": "Conversation context cleared."
+        })
+
+    except Exception as e:
+
+        print(
+            "Clear conversation error:",
+            repr(e)
+        )
+
+        return jsonify({
+            "success": False,
+            "error": (
+                "Could not clear conversation."
             )
         }), 500
 # ============================================================
