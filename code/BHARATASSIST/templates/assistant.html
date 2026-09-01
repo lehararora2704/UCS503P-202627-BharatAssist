@@ -362,6 +362,35 @@
             display: none;
         }
     }
+            /* Clear conversation button */
+        .clear-conversation-btn {
+            border: 1px solid #dc3545;
+            background: transparent;
+            color: #dc3545;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .clear-conversation-btn:hover {
+            background: #dc3545;
+            color: white;
+        }
+
+        .clear-conversation-btn:active {
+            transform: scale(0.97);
+        }
+
+        .clear-conversation-btn i {
+            font-size: 0.85rem;
+        }
 </style>
 {% endblock %}
 
@@ -485,7 +514,17 @@
                      ============================ -->
 
                 <div class="assistant-input-area">
-
+                    <div
+                        id="contextIndicator"
+                        style="
+                            font-size: 0.72rem;
+                            color: var(--slate-500);
+                            margin-bottom: 8px;
+                            padding-left: 2px;
+                        "
+                        >
+                        No active service context
+                    </div>
                     <form id="assistantForm" class="assistant-form">
 
                         <input
@@ -505,6 +544,15 @@
                             <span>Send</span>
                             <i class="fa-solid fa-paper-plane"></i>
                         </button>
+                        <button
+                    type="button"
+                    id="clearConversationBtn"
+                    class="clear-conversation-btn"
+                    title="Clear conversation"
+                 >
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Clear</span>
+                    </button>
 
                     </form>
 
@@ -789,8 +837,26 @@
                         data.sources || []
                     );
 
+                    // Update conversation context indicator
+                    if (contextIndicator) {
+
+                        if (data.context_service) {
+
+                            contextIndicator.textContent =
+                                "Current service: " +
+                                data.context_service;
+
+                        }
+                        else {
+
+                            contextIndicator.textContent =
+                                "No active service context";
+
+                        }
+                    }
+
                 }
-                else {
+                                else {
 
                     addAiMessage(
                         `<span class="text-danger">${
@@ -882,6 +948,114 @@
 
         }
     );
+    // ============================================================
+// CLEAR CONVERSATION
+// ============================================================
+
+const clearConversationBtn =
+    document.getElementById(
+        "clearConversationBtn"
+    );
+
+if (clearConversationBtn) {
+
+    clearConversationBtn.addEventListener(
+        "click",
+        async function () {
+
+            const confirmed = window.confirm(
+                "Clear the current conversation context?"
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+
+                const response = await fetch(
+                    "/api/assistant/clear",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        }
+                    }
+                );
+
+                const result =
+                    await response.json();
+
+                if (
+                    response.ok &&
+                    result.success
+                ) {
+
+                    // Remove displayed chat messages
+                    // if your page uses this container.
+                    const messages =
+                        document.querySelector(
+                            "#chatMessages"
+                        );
+
+                    if (messages) {
+                        messages.innerHTML = "";
+                    }
+
+                    // Optional context indicator
+                    const contextIndicator =
+                        document.querySelector(
+                            "#contextIndicator"
+                        );
+
+                    if (contextIndicator) {
+                        contextIndicator.textContent =
+                            "No active service context";
+                    }
+
+                    // Add a fresh assistant message
+                    if (messages) {
+
+                        const message =
+                            document.createElement(
+                                "div"
+                            );
+
+                        message.className =
+                            "assistant-message";
+
+                        message.textContent =
+                            "Conversation cleared. " +
+                            "How can I help you?";
+
+                        messages.appendChild(
+                            message
+                        );
+                    }
+
+                } else {
+
+                    window.alert(
+                        result.error ||
+                        "Could not clear conversation."
+                    );
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "Clear conversation error:",
+                    error
+                );
+
+                window.alert(
+                    "Could not connect to the server."
+                );
+            }
+        }
+    );
+}
 
 </script>
 

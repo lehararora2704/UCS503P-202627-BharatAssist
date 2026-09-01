@@ -3,7 +3,7 @@ import re
 import sqlite3
 from urllib.parse import urlparse
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify,session
 
 
 # ============================================================
@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, jsonify
 # ============================================================
 
 app = Flask(__name__)
+app.secret_key = "bharatassist-development-key"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "bharatassist.db")
@@ -1231,6 +1232,10 @@ def api_simplify():
 # API - AI ASSISTANT
 # ============================================================
 
+# ============================================================
+# API - AI ASSISTANT
+# ============================================================
+
 @app.route(
     "/api/assistant",
     methods=["POST"]
@@ -1239,50 +1244,307 @@ def api_assistant():
 
     try:
 
-        data = request.get_json(
-            silent=True
-        )
+        # ====================================================
+        # 1. READ REQUEST
+        # ====================================================
 
-        if not isinstance(
-            data,
-            dict
-        ):
+        data = request.get_json(silent=True)
 
+        if not isinstance(data, dict):
             data = {}
 
         question = data.get(
             "question",
-            data.get(
-                "message",
-                ""
-            )
+            data.get("message", "")
         )
 
-        if not isinstance(
-            question,
-            str
-        ):
-
+        if not isinstance(question, str):
             question = str(question)
 
         question = question.strip()
 
         if not question:
-
             return jsonify({
-                "answer": (
-                    "Please enter a question."
-                ),
+                "answer": "Please enter a question.",
                 "sources": []
             })
 
         question_lower = question.lower()
 
+        # ====================================================
+        # 2. GET PREVIOUS CONVERSATION CONTEXT
+        # ====================================================
+
+        conversation_context = session.get(
+            "assistant_context",
+            {}
+        )
+
+        previous_service = conversation_context.get(
+            "service"
+        )
+
+        previous_question = conversation_context.get(
+            "question",
+            ""
+        )
+
+        # ====================================================
+        # 3. DETECT USER INTENT
+        # ====================================================
+
+        intent = "general"
+
+        # Documents
+        if any(
+            phrase in question_lower
+            for phrase in [
+                "documents",
+                "document",
+                "proof",
+                "papers",
+                "what do i need",
+                "what is required",
+                "requirements"
+            ]
+        ):
+            intent = "documents"
+
+        # Fees
+        elif any(
+            phrase in question_lower
+            for phrase in [
+                "how much",
+                "how much does",
+                "cost",
+                "costs",
+                "fee",
+                "fees",
+                "price",
+                "charge",
+                "charges"
+            ]
+        ):
+            intent = "fees"
+
+        # Application
+        elif any(
+            phrase in question_lower
+            for phrase in [
+                "how do i apply",
+                "how can i apply",
+                "how to apply",
+                "apply",
+                "application",
+                "register",
+                "registration",
+                "enrol",
+                "enroll",
+                "procedure",
+                "process"
+            ]
+        ):
+            intent = "application"
+
+        # Eligibility
+        elif any(
+            phrase in question_lower
+            for phrase in [
+                "eligible",
+                "eligibility",
+                "qualify",
+                "qualification",
+                "who can apply",
+                "can i apply"
+            ]
+        ):
+            intent = "eligibility"
+
+        # Processing time
+        elif any(
+            phrase in question_lower
+            for phrase in [
+                "how long",
+                "processing time",
+                "processing",
+                "when will",
+                "how much time",
+                "time taken",
+                "how many days"
+            ]
+        ):
+            intent = "processing_time"
+
+        # ====================================================
+        # 4. LOAD SERVICES
+        # ====================================================
+
         services_list = get_all_services()
 
-        # ----------------------------------------------------
-        # Search database
-        # ----------------------------------------------------
+        # ====================================================
+        # 5. SERVICE ALIASES
+        # ====================================================
+
+        aliases = {
+
+            "driving licence": [
+                "driving licence",
+                "driving license",
+                "driver licence",
+                "driver license",
+                "dl"
+            ],
+
+            "income certificate": [
+                "income certificate",
+                "income proof"
+            ],
+
+            "pan card": [
+                "pan card",
+                "permanent account number",
+                "pan"
+            ],
+
+            "aadhaar": [
+                "aadhaar",
+                "aadhar",
+                "aadhaar card",
+                "aadhar card"
+            ],
+
+            "passport": [
+                "passport"
+            ],
+
+            "ration card": [
+                "ration card"
+            ],
+
+            "voter id": [
+                "voter id",
+                "voter card",
+                "election card"
+            ],
+
+            "caste certificate": [
+                "caste certificate",
+                "caste proof",
+                "community certificate"
+            ]
+        }
+
+        # ====================================================
+        # 6. DETERMINE WHETHER USER EXPLICITLY
+        #    MENTIONED A SERVICE
+        # ====================================================
+
+        explicit_service = None
+        explicit_service_score = 0
+
+        for service in services_list:
+
+            service_name = str(
+                service.get("name") or ""
+            ).strip()
+
+            service_name_lower = service_name.lower()
+
+            if not service_name_lower:
+                continue
+
+            # -----------------------------------------------
+            # Exact full service name
+            # -----------------------------------------------
+
+            if service_name_lower in question_lower:
+
+                if len(service_name_lower) > explicit_service_score:
+
+                    explicit_service = service
+                    explicit_service_score = len(
+                        service_name_lower
+                    )
+
+            # -----------------------------------------------
+            # Check aliases
+            # -----------------------------------------------
+
+            for canonical_name, alias_list in aliases.items():
+
+                if canonical_name in service_name_lower:
+
+                    for alias in alias_list:
+
+                        if alias in question_lower:
+
+                            alias_score = len(alias) + 500
+
+                            if alias_score > explicit_service_score:
+
+                                explicit_service = service
+                                explicit_service_score = alias_score
+
+        # ====================================================
+        # 7. FIND SERVICE USING SCORING
+        # ====================================================
+
+        matches = []
+
+        ignored_words = {
+            "what",
+            "which",
+            "where",
+            "when",
+            "how",
+            "can",
+            "could",
+            "would",
+            "should",
+            "do",
+            "does",
+            "did",
+            "is",
+            "are",
+            "the",
+            "a",
+            "an",
+            "for",
+            "of",
+            "to",
+            "in",
+            "on",
+            "my",
+            "me",
+            "please",
+            "tell",
+            "give",
+            "required",
+            "requirements",
+            "documents",
+            "document",
+            "proof",
+            "papers",
+            "cost",
+            "costs",
+            "fee",
+            "fees",
+            "price",
+            "charge",
+            "charges",
+            "apply",
+            "application",
+            "register",
+            "registration",
+            "eligible",
+            "eligibility",
+            "qualify",
+            "qualification",
+            "time",
+            "long",
+            "processing",
+            "much"
+        }
 
         query_words = [
             word
@@ -1291,15 +1553,34 @@ def api_assistant():
                 question_lower
             )
             if len(word) > 2
+            and word not in ignored_words
         ]
-
-        matches = []
 
         for service in services_list:
 
-            steps_value = service.get(
-                "steps"
-            )
+            service_name = str(
+                service.get("name") or ""
+            ).strip()
+
+            service_name_lower = service_name.lower()
+
+            category = str(
+                service.get("category") or ""
+            ).lower()
+
+            state = str(
+                service.get("state") or ""
+            ).lower()
+
+            eligibility = str(
+                service.get("eligibility") or ""
+            ).lower()
+
+            documents = str(
+                service.get("documents_required") or ""
+            ).lower()
+
+            steps_value = service.get("steps")
 
             if isinstance(
                 steps_value,
@@ -1309,45 +1590,68 @@ def api_assistant():
                 steps_text = " ".join(
                     str(step)
                     for step in steps_value
-                )
+                ).lower()
 
             else:
 
                 steps_text = str(
-                    steps_value
-                    or ""
-                )
+                    steps_value or ""
+                ).lower()
 
             searchable = " ".join([
-                str(
-                    service.get("name")
-                    or ""
-                ),
-                str(
-                    service.get("category")
-                    or ""
-                ),
-                str(
-                    service.get("state")
-                    or ""
-                ),
-                str(
-                    service.get("eligibility")
-                    or ""
-                ),
-                str(
-                    service.get("documents_required")
-                    or ""
-                ),
+                service_name_lower,
+                category,
+                state,
+                eligibility,
+                documents,
                 steps_text
-            ]).lower()
+            ])
 
             score = 0
 
+            # Exact service
+            if (
+                service_name_lower
+                and service_name_lower in question_lower
+            ):
+                score += 1000
+
+            # Service words
+            service_words = [
+                word
+                for word in re.findall(
+                    r"[a-zA-Z0-9]+",
+                    service_name_lower
+                )
+                if len(word) > 2
+            ]
+
+            for word in service_words:
+
+                if word in question_lower:
+                    score += 100
+
+            # Alias matching
+            for canonical_name, alias_list in aliases.items():
+
+                if canonical_name in service_name_lower:
+
+                    for alias in alias_list:
+
+                        if alias in question_lower:
+                            score += 500
+
+            # General keyword matching
             for word in query_words:
 
-                if word in searchable:
-                    score += 1
+                if word in service_name_lower:
+                    score += 50
+
+                elif word in category:
+                    score += 20
+
+                elif word in searchable:
+                    score += 5
 
             if score > 0:
 
@@ -1363,25 +1667,81 @@ def api_assistant():
             reverse=True
         )
 
-        # ----------------------------------------------------
-        # PM-KISAN
-        # ----------------------------------------------------
+        # ====================================================
+        # 8. EXPLICIT SERVICE ALWAYS WINS
+        # ====================================================
+
+        if explicit_service is not None:
+
+            matches = [
+                (
+                    10000,
+                    explicit_service
+                )
+            ]
+
+        # ====================================================
+        # 9. FOLLOW-UP QUESTION HANDLING
+        #
+        # If user says:
+        #
+        # "What documents are required for driving licence?"
+        #
+        # followed by:
+        #
+        # "How much does it cost?"
+        #
+        # the second question uses the previous service.
+        #
+        # BUT:
+        #
+        # "What documents are required for PAN?"
+        #
+        # explicitly mentions PAN, so PAN wins.
+        # ====================================================
+
+        elif (
+            previous_service
+            and intent != "general"
+        ):
+
+            previous_service_lower = str(
+                previous_service
+            ).strip().lower()
+
+            previous_matches = [
+                service
+                for service in services_list
+                if str(
+                    service.get("name") or ""
+                ).strip().lower()
+                == previous_service_lower
+            ]
+
+            if previous_matches:
+
+                matches = [
+                    (
+                        9000,
+                        previous_matches[0]
+                    )
+                ]
+
+        # ====================================================
+        # 10. PM-KISAN SPECIAL CASE
+        # ====================================================
 
         if (
-            "kisan" in question_lower
+            "pm-kisan" in question_lower
             or "pm kisan" in question_lower
-            or "pm-kisan" in question_lower
-            or "farmer" in question_lower
-            or "farmers" in question_lower
+            or "kisan" in question_lower
         ):
 
             answer = (
-                "<strong>PM-KISAN</strong><br><br>"
+                "<strong>PM-KISAN</strong>"
+                "<br><br>"
                 "PM-KISAN is a Government of India "
-                "scheme for eligible farmer families. "
-                "For current eligibility, registration "
-                "requirements and application information, "
-                "please use the official PM-KISAN portal."
+                "scheme for eligible farmer families."
             )
 
             sources = [
@@ -1393,134 +1753,194 @@ def api_assistant():
                 }
             ]
 
-        # ----------------------------------------------------
-        # Database match
-        # ----------------------------------------------------
+            session["assistant_context"] = {
+                "service": "PM-KISAN",
+                "intent": intent,
+                "question": question
+            }
 
-        elif matches:
+            session.modified = True
 
-            service = matches[0][1]
+            return jsonify({
+                "answer": answer,
+                "sources": sources,
+                "context_service": "PM-KISAN"
+            })
+        # ====================================================
+        # 11. NO MATCH
+        # ====================================================
 
-            documents = (
-                service.get(
-                    "documents_required"
-                )
-                or "Not specified"
+        if not matches:
+
+            return jsonify({
+                "answer": (
+                    "I could not find a matching service "
+                    "in the BharatAssist database.<br><br>"
+                    "Try asking about a specific service such as "
+                    "Driving Licence, Income Certificate, Passport, "
+                    "Aadhaar, PAN, Ration Card, Voter ID or PM-KISAN."
+                ),
+                "sources": []
+            })
+
+        # ====================================================
+        # 12. SELECT BEST SERVICE
+        # ====================================================
+
+        service = matches[0][1]
+
+        service_name = str(
+            service.get("name")
+            or "Government Service"
+        )
+
+        eligibility = (
+            service.get("eligibility")
+            or "Not specified"
+        )
+
+        documents = (
+            service.get("documents_required")
+            or "Not specified"
+        )
+
+        fees = (
+            service.get("fees")
+            or "Not specified"
+        )
+
+        processing_time = (
+            service.get("processing_time")
+            or "Not specified"
+        )
+
+        steps = service.get("steps")
+
+        # ====================================================
+        # 13. FORMAT APPLICATION STEPS
+        # ====================================================
+
+        if isinstance(steps, list):
+
+            steps_text = "<br>".join(
+                str(step)
+                for step in steps
             )
 
-            fees = (
-                service.get(
-                    "fees"
-                )
-                or "Not specified"
+        else:
+
+            steps_text = str(
+                steps
+                or "Application procedure not specified."
             )
 
-            processing_time = (
-                service.get(
-                    "processing_time"
-                )
-                or "Not specified"
-            )
+        # ====================================================
+        # 14. INTENT-SPECIFIC ANSWER
+        # ====================================================
 
-            eligibility = (
-                service.get(
-                    "eligibility"
-                )
-                or "Not specified"
-            )
+        if intent == "documents":
 
             answer = (
-                f"<strong>{service.get('name')}</strong>"
+                f"<strong>{service_name}</strong>"
                 "<br><br>"
-                f"<strong>Eligibility:</strong> "
-                f"{eligibility}"
-                "<br><br>"
-                f"<strong>Documents:</strong> "
+                "<strong>Required Documents:</strong><br>"
                 f"{documents}"
+            )
+
+        elif intent == "fees":
+
+            answer = (
+                f"<strong>{service_name}</strong>"
                 "<br><br>"
-                f"<strong>Fees:</strong> "
+                "<strong>Fees / Cost:</strong><br>"
                 f"{fees}"
+            )
+
+        elif intent == "application":
+
+            answer = (
+                f"<strong>{service_name}</strong>"
                 "<br><br>"
-                f"<strong>Processing time:</strong> "
+                "<strong>How to Apply:</strong><br>"
+                f"{steps_text}"
+            )
+
+        elif intent == "eligibility":
+
+            answer = (
+                f"<strong>{service_name}</strong>"
+                "<br><br>"
+                "<strong>Eligibility:</strong><br>"
+                f"{eligibility}"
+            )
+
+        elif intent == "processing_time":
+
+            answer = (
+                f"<strong>{service_name}</strong>"
+                "<br><br>"
+                "<strong>Processing Time:</strong><br>"
                 f"{processing_time}"
             )
-
-            sources = []
-
-            source_url = normalize_url(
-                service.get(
-                    "source_url"
-                )
-            )
-
-            if source_url:
-
-                sources.append({
-                    "name": (
-                        service.get("name")
-                        or "Official Portal"
-                    ),
-                    "source_url": source_url
-                })
-
-        # ----------------------------------------------------
-        # General government question
-        # ----------------------------------------------------
-
-        elif any(
-            keyword in question_lower
-            for keyword in [
-                "government",
-                "scheme",
-                "certificate",
-                "passport",
-                "aadhaar",
-                "aadhar",
-                "pan",
-                "ration",
-                "voter",
-                "driving",
-                "license",
-                "licence"
-            ]
-        ):
-
-            answer = (
-                "I could not find a specific matching "
-                "service in the BharatAssist database. "
-                "Please search the Services Directory "
-                "or ask using the exact service name."
-            )
-
-            sources = [
-                {
-                    "name": "National Portal of India",
-                    "source_url": (
-                        "https://www.india.gov.in/"
-                    )
-                }
-            ]
-
-        # ----------------------------------------------------
-        # No match
-        # ----------------------------------------------------
 
         else:
 
             answer = (
-                "I could not find a matching service "
-                "in the BharatAssist database.<br><br>"
-                "Try asking about a service by name, "
-                "for example: Driving Licence, Income "
-                "Certificate, Passport, Aadhaar, PAN, "
-                "Ration Card, Voter ID or PM-KISAN."
+                f"<strong>{service_name}</strong>"
+                "<br><br>"
+                "<strong>Eligibility:</strong><br>"
+                f"{eligibility}"
+                "<br><br>"
+                "<strong>Documents:</strong><br>"
+                f"{documents}"
+                "<br><br>"
+                "<strong>Fees:</strong><br>"
+                f"{fees}"
+                "<br><br>"
+                "<strong>Processing Time:</strong><br>"
+                f"{processing_time}"
             )
 
-            sources = []
+        # ====================================================
+        # 15. SOURCE
+        # ====================================================
+
+        sources = []
+
+        source_url = normalize_url(
+            service.get("source_url")
+        )
+
+        if source_url:
+
+            sources.append({
+                "name": service_name,
+                "source_url": source_url
+            })
+
+        # ====================================================
+        # 16. SAVE CONVERSATION CONTEXT
+        # ====================================================
+
+        session["assistant_context"] = {
+            "service": service_name,
+            "intent": intent,
+            "question": question
+        }
+
+        session.modified = True
+
+        # ====================================================
+        # 17. RETURN RESPONSE
+        # ====================================================
 
         return jsonify({
             "answer": answer,
-            "sources": sources
+            "sources": sources,
+            "context_service": session.get(
+                "assistant_context",
+                {}
+            ).get("service")
         })
 
     except Exception as e:
@@ -1536,8 +1956,43 @@ def api_assistant():
                 "the request."
             )
         }), 500
+    # ============================================================
+# CLEAR ASSISTANT CONVERSATION
+# ============================================================
 
+@app.route(
+    "/api/assistant/clear",
+    methods=["POST"]
+)
+def clear_assistant_conversation():
 
+    try:
+        # Remove the stored follow-up context
+        session.pop(
+            "assistant_context",
+            None
+        )
+
+        session.modified = True
+
+        return jsonify({
+            "success": True,
+            "message": "Conversation context cleared."
+        })
+
+    except Exception as e:
+
+        print(
+            "Clear conversation error:",
+            repr(e)
+        )
+
+        return jsonify({
+            "success": False,
+            "error": (
+                "Could not clear conversation."
+            )
+        }), 500
 # ============================================================
 # HEALTH CHECK
 # ============================================================
