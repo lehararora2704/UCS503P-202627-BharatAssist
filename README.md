@@ -207,4 +207,4 @@ BharatAssist is evaluated across primary engineering criteria:
 - **Course Context**: UCS503P Project (2026–27 ODD)
 - **Team Members**:
   - **Aastha Mahajan** (Roll No: `1024030424`) — AI Chatbot, Multilingual i18n, Voice/TTS Pipelines, Phone Auth & SQLite Schema.
-  - **Lehar Arora** (Roll No: `1024030419`) — Authentication Strategy, Comprehensive Test Suite (33 Tests), Kiosk Auto-Logout Security, Navigation & UI/UX.
+  - **Lehar Arora** (Roll No: `1024030419`) — AI Chatbot-Coneversation History and Handling,Authentication Strategy, Comprehensive Test Suite (33 Tests),      Kiosk Auto-Logout Security, Navigation & UI/UX.
