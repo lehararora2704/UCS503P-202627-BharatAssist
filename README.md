@@ -13,39 +13,39 @@ Powered by **Google Gemini 2.5 Flash**, **ChromaDB vector retrieval (RAG)**, and
 
 ---
 
-## 🌟 Key Features
+##  Key Features
 
-### 1. 🤖 Multilingual AI Civic Assistant
+### 1.  Multilingual AI Civic Assistant
 - **12 Indian Languages Supported**: English, Hindi (हिंदी), Punjabi (ਪੰਜਾਬੀ), Bengali (বাংলা), Marathi (मराठी), Tamil (தமிழ்), Telugu (తెలుగు), Gujarati (ગુજરાતી), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Odia (ଓଡ଼ିଆ), and Urdu (اردو).
 - **Source-Grounded RAG**: Queries are grounded strictly in official government service schemas and verified source portals.
 - **Context-Aware Follow-ups**: Remembers service context (e.g., Driving Licence, Income Certificate, Ration Card) during conversation.
 
-### 2. 🎙️ Voice Input & Spoken Responses (STT & TTS)
+### 2.  Voice Input & Spoken Responses (STT & TTS)
 - **Speech-to-Text**: Citizens can speak their questions in regional languages using microphone input via Gemini multimodal audio transcription or Web Speech API.
 - **Auto-Read Replies (Text-to-Speech)**: Spoken answers synthesized via Gemini TTS and neural audio fallback so illiterate or visually impaired citizens can listen to procedures.
 
-### 3. 🛡️ Zero-LLM Privacy Shield
+### 3. Zero-LLM Privacy Shield
 - **Architecture Invariant**: Citizen phone numbers, names, password hashes, and OTPs remain strictly local in SQLite and encrypted session cookies.
 - **Automated PII Redaction**: Regex-based redaction scrubs Aadhaar numbers, PAN numbers, emails, and phone numbers before any prompt is sent to public AI models.
 
-### 4. 📱 Mobile-First Authentication & Persistent History
+### 4. Mobile-First Authentication & Persistent History
 - **Dual-Tab Portal**:
   - **Login for Existing Citizens**: Mobile number + Password with OTP fallback.
   - **Sign Up for New Citizens**: Mandatory Full Name + Mobile Number + Password + 6-digit OTP verification.
 - **Personalized Assistant**: Greets authenticated citizens politely by name (`Namaste, [Name]!`); remains neutral and anonymous for guests.
 - **Persistent Chat History**: Previous Q&A turns are saved securely in SQLite and accessible via an offcanvas drawer with on-demand inspection and one-click history wipe.
 
-### 5. 🔒 Kiosk Security Mode (Auto-Logout on Refresh)
+### 5.  Kiosk Security Mode (Auto-Logout on Refresh)
 - Designed for shared public kiosks, cyber cafes, and Common Service Centres (CSCs).
 - When an authenticated user refreshes the page (F5 or browser reload), the session is immediately invalidated, returning the browser to the homepage (`/`) in a clean guest state to prevent credential leakage.
 
-### 6. 📄 Government Document Simplifier
+### 6. Government Document Simplifier
 - Paste complex legal circulars, notifications, or upload PDFs/DOCX up to 10 MB.
 - Automatically redacts sensitive identifiers and provides an easy-to-read, 5th-grade reading level summary of requirements, eligibility, and steps.
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## Architecture & Data Flow
 
 ```mermaid
 flowchart TD
@@ -84,7 +84,7 @@ flowchart TD
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 BHARATASSIST/
@@ -131,7 +131,7 @@ BHARATASSIST/
 
 ---
 
-## 🚀 Quick Start Guide
+##  Quick Start Guide
 
 ### Prerequisites
 - Python 3.10 or higher
@@ -169,7 +169,7 @@ Open your browser and navigate to: **`http://127.0.0.1:5000`**
 
 ---
 
-## 🧪 Automated Testing & Verification
+##  Automated Testing & Verification
 
 The project includes an end-to-end automated test suite covering all 13+ endpoints, authentication mechanisms, and LLM integrations.
 
@@ -192,7 +192,7 @@ python -m unittest tests/test_all_endpoints.py
 
 ---
 
-## 📊 Evaluation Metrics
+##  Evaluation Metrics
 
 BharatAssist is evaluated across primary engineering criteria:
 - **Information Retrieval Time (IRT)**: Logged on every search query to measure speed of civic procedure discovery.
@@ -201,10 +201,10 @@ BharatAssist is evaluated across primary engineering criteria:
 
 ---
 
-## 👥 Team & Project Details
+##  Team & Project Details
 
 - **Project Name**: **BHARATASSIST**
 - **Course Context**: UCS503P Project (2026–27 ODD)
 - **Team Members**:
   - **Aastha Mahajan** (Roll No: `1024030424`) — AI Chatbot, Multilingual i18n, Voice/TTS Pipelines, Phone Auth & SQLite Schema.
-  - **Lehar Arora** (Roll No: `1024030419`) — AI Chatbot-Coneversation History and Handling,Authentication Strategy, Comprehensive Test Suite (33 Tests),      Kiosk Auto-Logout Security, Navigation & UI/UX.
+  - **Lehar Arora** (Roll No: `1024030419`) — AI Chatbot-Conversation History and Handling,Authentication Strategy, Comprehensive Test Suite (33 Tests),      Kiosk Auto-Logout Security, Navigation & UI/UX.
