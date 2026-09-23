@@ -6,7 +6,14 @@ Run:
 """
 
 import os
+import sys
 import sqlite3
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from utils.rag import (
     add_service_to_index,
@@ -312,7 +319,7 @@ def clear_services():
     conn.commit()
     conn.close()
 
-    print("✓ Old service records removed.")
+    print("[OK] Old service records removed.")
 
 
 # ============================================================
@@ -333,12 +340,12 @@ def clear_rag_index():
 
         if ids:
             collection.delete(ids=ids)
-            print(f"✓ Removed {len(ids)} old RAG records.")
+            print(f"[OK] Removed {len(ids)} old RAG records.")
         else:
-            print("✓ RAG index was already empty.")
+            print("[OK] RAG index was already empty.")
 
     except Exception as e:
-        print("⚠ Could not clear old RAG records:", e)
+        print("[!] Could not clear old RAG records:", e)
 
 
 # ============================================================
@@ -444,7 +451,7 @@ def run():
         )
 
         print(
-            f"✓ {service['name']}"
+            f"[OK] {service['name']}"
         )
 
     # Save database

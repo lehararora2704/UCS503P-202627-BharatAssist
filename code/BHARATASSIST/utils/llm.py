@@ -30,7 +30,6 @@ _cached_key = None
 # Primary and fallback model choices for high throughput & quota safety
 PRIMARY_MODELS = [
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
     "gemini-3.6-flash"
 ]
 TTS_MODEL = "gemini-2.5-flash-preview-tts"
@@ -91,7 +90,7 @@ def _call_gemini(contents, model_candidates=None, config=None):
 
 
 # ============================================================
-# PROMPT TEMPLATES
+# PROMPT TEMPLATES & MULTILINGUAL SPECIFICATIONS
 # ============================================================
 
 SIMPLIFY_PROMPT = """You are simplifying an Indian government or legal document for a common citizen \
@@ -107,50 +106,267 @@ Document text:
 
 Plain-language explanation:"""
 
-ASSISTANT_PROMPT = """You are BharatAssist, an AI Civic Assistant for Indian citizens navigating government services. \
-Answer the citizen's question accurately using ONLY the verified context provided below. \
-Respond in {language} (use simple, clear language). \
-If the verified context does not contain the answer, say so politely and direct the user to check the official government portal. \
-Do not hallucinate or invent procedures, fees, or requirements not present in the verified context. \
-Format key points with bullet points and bold labels for readability.
+LANGUAGE_SPECS = {
+    "English": {
+        "directive": (
+            "The citizen has selected English.\n"
+            "CRITICAL LANGUAGE RULE: You MUST write your entire response 100% in English.\n"
+            "All headings, bullet points, numbers, steps, and tips MUST be in English only."
+        ),
+        "greeting_sample": "Namaste",
+        "greeting_msg": "Hello! I am BharatAssist, your civic assistant for Indian government services. How may I assist you with government services or welfare schemes today?",
+        "greeting_with_name": "Hello {name}! I am BharatAssist, your civic assistant. How may I assist you with Indian government services or welfare schemes today?",
+        "not_found_msg": "I am sorry, this information is not available in our database. May I help you with anything else?",
+        "sections": [
+            "**Quick Summary**: 1-2 clear sentences in English explaining the service.",
+            "**Step-by-Step Procedure**: Clear, numbered steps (1., 2., 3.) in English.",
+            "**Required Documents**: Bulleted list of needed identity/address proofs in English.",
+            "**Fees & Processing Time**: Exact cost and estimated days in English.",
+            "**Helpful Tip**: Official portal link or practical advice in English."
+        ]
+    },
+    "Hindi": {
+        "directive": (
+            "नागरिक ने हिन्दी भाषा का चयन किया है।\n"
+            "मुख्य नियम: आपको अपना पूरा उत्तर 100% देवनागरी हिन्दी में ही देना होगा।\n"
+            "कोष्ठक में बार-बार अंग्रेज़ी अनुवाद न लिखें।"
+        ),
+        "greeting_sample": "नमस्ते",
+        "greeting_msg": "नमस्ते! मैं भारतअसिस्ट हूँ, आपका नागरिक सहायक। आज मैं सरकारी सेवाओं या कल्याणकारी योजनाओं में आपकी क्या सहायता कर सकता हूँ?",
+        "greeting_with_name": "नमस्ते {name} जी! मैं भारतअसिस्ट हूँ, आपका नागरिक सहायक। आज मैं सरकारी सेवाओं या योजनाओं में आपकी क्या सहायता कर सकता हूँ?",
+        "not_found_msg": "क्षमा करें, यह जानकारी हमारे डेटाबेस में उपलब्ध नहीं है। क्या मैं आपकी किसी अन्य सरकारी सेवा में सहायता कर सकता हूँ?",
+        "sections": [
+            "**संक्षिप्त विवरण**: सेवा के बारे में 1-2 स्पष्ट वाक्य।",
+            "**आवेदन प्रक्रिया**: स्पष्ट क्रमांकित चरण (1., 2., 3.)।",
+            "**आवश्यक दस्तावेज़**: आवश्यक पहचान और पते के प्रमाण की सूची।",
+            "**शुल्क एवं समय सीमा**: अनुमानित लागत और कार्य दिवस।",
+            "**महत्वपूर्ण सुझाव**: आधिकारिक पोर्टल लिंक या व्यावहारिक सलाह।"
+        ]
+    },
+    "Punjabi": {
+        "directive": (
+            "ਨਾਗਰਿਕ ਨੇ ਪੰਜਾਬੀ ਭਾਸ਼ਾ ਦੀ ਚੋਣ ਕੀਤੀ ਹੈ।\n"
+            "ਮਹੱਤਵਪੂਰਨ ਨਿਰਦੇਸ਼: ਤੁਹਾਨੂੰ ਆਪਣਾ ਪੂਰਾ ਜਵਾਬ 100% ਪੰਜਾਬੀ (ਗੁਰਮੁਖੀ ਲਿਪੀ) ਵਿੱਚ ਹੀ ਦੇਣਾ ਪਵੇਗਾ।\n"
+            "ਬਰੈਕਟਾਂ ਵਿੱਚ ਵਾਰ-ਵਾਰ ਅੰਗਰੇਜ਼ੀ ਅਨੁਵਾਦ ਨਾ ਲਿਖੋ।"
+        ),
+        "greeting_sample": "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ ਜੀ",
+        "greeting_msg": "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਭਾਰਤਅਸਿਸਟ ਹਾਂ, ਤੁਹਾਡਾ ਨਾਗਰਿਕ ਸਹਾਇਕ। ਅੱਜ ਮੈਂ ਸਰਕਾਰੀ ਸੇਵਾਵਾਂ ਜਾਂ ਭਲਾਈ ਸਕੀਮਾਂ ਵਿੱਚ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ?",
+        "greeting_with_name": "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ {name} ਜੀ! ਮੈਂ ਭਾਰਤਅਸਿਸਟ ਹਾਂ। ਅੱਜ ਮੈਂ ਸਰਕਾਰੀ ਸੇਵਾਵਾਂ ਜਾਂ ਸਕੀਮਾਂ ਵਿੱਚ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ?",
+        "not_found_msg": "ਮਾਫ਼ ਕਰਨਾ, ਇਹ ਜਾਣਕਾਰੀ ਸਾਡੇ ਡੇਟਾਬੇਸ ਵਿੱਚ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੀ ਮੈਂ ਕਿਸੇ ਹੋਰ ਸਰਕਾਰੀ ਸੇਵਾ ਵਿੱਚ ਤੁਹਾਡੀ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ?",
+        "sections": [
+            "**ਸੰਖੇਪ ਜਾਣਕਾਰੀ**: ਸੇਵਾ ਬਾਰੇ 1-2 ਸਪਸ਼ਟ ਵਾਕ।",
+            "**ਅਪਲਾਈ ਕਰਨ ਦਾ ਤਰੀਕਾ**: ਸਪਸ਼ਟ ਨੰਬਰਵਾਰ ਕਦਮ (1., 2., 3.)।",
+            "**ਜ਼ਰੂਰੀ ਦਸਤਾਵੇਜ਼**: ਲੋੜੀਂਦੇ ਪਛਾਣ ਅਤੇ ਪਤੇ ਦੇ ਸਬੂਤਾਂ ਦੀ ਸੂਚੀ।",
+            "**ਫੀਸ ਅਤੇ ਸਮਾਂ**: ਸਰਕਾਰੀ ਖਰਚਾ ਅਤੇ ਅੰਦਾਜ਼ਨ ਦਿਨ।",
+            "**ਮਹੱਤਵਪੂਰਨ ਸੁਝਾਅ**: ਅਧਿਕਾਰਤ ਪੋਰਟਲ ਲਿੰਕ ਜਾਂ ਵਿਵਹਾਰਕ ਸਲਾਹ।"
+        ]
+    },
+    "Bengali": {
+        "directive": (
+            "নাগরিক বাংলা ভাষা নির্বাচন করেছেন।\n"
+            "প্রধান নিয়ম: আপনার সম্পূর্ণ উত্তর ১০০% বাংলা লিপিতে হওয়া আবশ্যক।\n"
+            "বন্ধনীতে বারবার ইংরেজি অনুবাদ লিখবেন না।"
+        ),
+        "greeting_sample": "নমস্কার",
+        "greeting_msg": "নমস্কার! আমি ভারতঅ্যাসিস্ট, আপনার নাগরিক সহায়ক। আজ আমি সরকারি পরিষেবা বা কল্যাণমূলক প্রকল্পে আপনাকে কীভাবে সাহায্য করতে পারি?",
+        "greeting_with_name": "নমস্কার {name}! আমি ভারতঅ্যাসিস্ট। আজ আমি সরকারি পরিষেবা বা প্রকল্পে আপনাকে কীভাবে সাহায্য করতে পারি?",
+        "not_found_msg": "দুঃখিত, এই তথ্যটি আমাদের ডেটাবেসে উপলব্ধ নেই। আমি কি আপনাকে অন্য কোনো সরকারি সেবায় সাহায্য করতে পারি?",
+        "sections": [
+            "**সংক্ষিপ্ত বিবরণ**: পরিষেবা সম্পর্কে ১-২টি স্পষ্ট বাক্য।",
+            "**আবেদন প্রক্রিয়া**: স্পষ্ট ক্রমিক ধাপ (১., ২., ৩.)।",
+            "**প্রয়োজনীয় কাগজপত্র**: প্রয়োজনীয় পরিচয় এবং ঠিকানার প্রমাণ।",
+            "**ফি এবং সময়সীমা**: আনুমানিক খরচ এবং কর্মদিবস।",
+            "**গুরুত্বপূর্ণ পরামর্শ**: অফিসিয়াল পোর্টাল লিঙ্ক বা ব্যবহারিক পরামর্শ।"
+        ]
+    },
+    "Marathi": {
+        "directive": (
+            "नागरिकाने मराठी भाषा निवडली आहे।\n"
+            "मुख्य नियम: तुमचे संपूर्ण उत्तर १००% मराठीमध्येच असणे आवश्यक आहे।"
+        ),
+        "greeting_sample": "नमस्कार",
+        "greeting_msg": "नमस्कार! मी भारतअसिस्ट आहे, आपला नागरिक सहाय्यक. आज मी आपल्याला सरकारी सेवा किंवा योजनांमध्ये कशी मदत करू शकतो?",
+        "greeting_with_name": "नमस्कार {name} जी! मी भारतअसिस्ट आहे. आज मी आपल्याला सरकारी सेवा किंवा योजनांमध्ये कशी मदत करू शकतो?",
+        "not_found_msg": "क्षमस्व, ही माहिती आमच्या डेटाबेसमध्ये उपलब्ध नाही. मी तुम्हाला इतर कोणत्याही सरकारी सेवेसाठी मदत करू शकतो का?",
+        "sections": [
+            "**थोडक्यात माहिती**: सेवेबद्दल 1-2 स्पष्ट वाक्ये.",
+            "**अर्ज प्रक्रिया**: स्पष्ट टप्पे (1., 2., 3.).",
+            "**आवश्यक कागदपत्रे**: आवश्यक ओळख आणि पत्त्याचा पुरावा.",
+            "**शुल्क आणि कालावधी**: अंदाजे खर्च आणि दिवस.",
+            "**महत्त्वाची टीप**: अधिकृत पोर्टल लिंक किंवा सल्ला."
+        ]
+    },
+    "Gujarati": {
+        "directive": (
+            "નાગરિકે ગુજરાતી ભાષા પસંદ કરી છે.\n"
+            "મુખ્ય નિયમ: તમારો સંપૂર્ણ ઉત્તર ૧૦૦% ગુજરાતી લિપિમાં હોવો જોઈએ."
+        ),
+        "greeting_sample": "નમસ્તે",
+        "greeting_msg": "નમસ્તે! હું ભારતઅસિસ્ટ છું, તમારો નાગરિક સહાયક. આજે હું તમને સરકારી સેવાઓ અથવા યોજનાઓમાં કેવી રીતે મદદ કરી શકું?",
+        "greeting_with_name": "નમસ્તે {name}! હું ભારતઅસિસ્ટ છું. આજે હું તમને સરકારી સેવાઓ અથવા યોજનાઓમાં કેવી રીતે મદદ કરી શકું?",
+        "not_found_msg": "માફ કરશો, આ માહિતી અમારા ડેટાબેઝમાં ઉપલબ્ધ નથી. શું હું તમને અન્ય કોઈ સરકારી સેવામાં મદદ કરી શકું?",
+        "sections": [
+            "**સંક્ષિપ્ત માહિતી**: સેવા વિશે 1-2 સ્પષ્ટ વાક્યો.",
+            "**અરજી પ્રક્રિયા**: સ્પષ્ટ ક્રમબદ્ધ પગલાં (1., 2., 3.).",
+            "**જરૂરી દસ્તાવેજો**: જરૂરી પુરાવાઓની યાદી.",
+            "**ફી અને સમય**: અંદાજિત ખર્ચ અને દિવસો.",
+            "**મહત્વપૂર્ણ સલાહ**: સત્તાવાર પોર્ટલ લિંક અથવા સલાહ."
+        ]
+    },
+    "Tamil": {
+        "directive": (
+            "குடிமகன் தமிழ் மொழியைத் தேர்ந்தெடுத்துள்ளார்.\n"
+            "முக்கிய விதி: உங்கள் முழு பதிலும் 100% தமிழ் எழுத்துக்களில் மட்டுமே இருக்க வேண்டும்."
+        ),
+        "greeting_sample": "வணக்கம்",
+        "greeting_msg": "வணக்கம்! நான் பாரத்அசிஸ்ட், உங்கள் குடிமக்கள் உதவியாளர். அரசு சேவைகள் அல்லது நலத்திட்டங்களில் இன்று நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?",
+        "greeting_with_name": "வணக்கம் {name}! நான் பாரத்அசிஸ்ட். அரசு சேவைகள் அல்லது திட்டங்களில் இன்று நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?",
+        "not_found_msg": "மன்னிக்கவும், இந்த தகவல் எங்கள் தரவுத்தளத்தில் கிடைக்கவில்லை. வேறு ஏதேனும் அரசு சேவையில் நான் உங்களுக்கு உதவலாமா?",
+        "sections": [
+            "**சுருக்கமான தகவல்**: சேவை பற்றிய 1-2 தெளிவான வாக்கியங்கள்.",
+            "**விண்ணப்பிக்கும் முறை**: தெளிவான படிநிலைகள் (1., 2., 3.).",
+            "**தேவையான ஆவணங்கள்**: தேவையான ஆவணங்களின் பட்டியல்.",
+            "**கட்டணம் மற்றும் நேரம்**: அரசு கட்டணம் மற்றும் ஆகும் காலம்.",
+            "**முக்கிய குறிப்பு**: அதிகாரப்பூர்வ இணையதள விவரம்."
+        ]
+    },
+    "Telugu": {
+        "directive": (
+            "పౌరుడు తెలుగు భాషను ఎంచుకున్నారు.\n"
+            "ముఖ్య నియమం: మీ పూర్తి సమాధానం 100% తెలుగు లిపిలోనే ఉండాలి."
+        ),
+        "greeting_sample": "నమస్కారం",
+        "greeting_msg": "నమస్కారం! నేను భారత్‌అసిస్ట్, మీ పౌర సహాయకుడిని. ఈరోజు ప్రభుత్వ సేవలు లేదా సంక్షేమ పథకాలలో నేను మీకు ఎలా సహాయపడగలను?",
+        "greeting_with_name": "నమస్కారం {name} గారు! నేను భారత్‌అసిస్ట్. ఈరోజు ప్రభుత్వ సేవలు లేదా పథకాలలో నేను మీకు ఎలా సహాయపడగలను?",
+        "not_found_msg": "క్షమించండి, ఈ సమాచారం మా డేటాబేస్‌లో అందుబాటులో లేదు. నేను మీకు మరేదైనా ప్రభుత్వ సేవలో సహాయం చేయగలనా?",
+        "sections": [
+            "**సంక్షిప్త సమాచారం**: సేవ గురించి 1-2 స్పష్టమైన వాక్యాలు.",
+            "**దరఖాస్తు విధానం**: స్పష్టమైన దశలు (1., 2., 3.).",
+            "**కావలసిన పత్రాలు**: అవసరమైన పత్రాల జాబితా.",
+            "**ఫీజు మరియు సమయం**: అంచనా వ్యయం మరియు సమయం.",
+            "**ముఖ్యమైన సలహా**: అధికారిక పోర్టల్ సమాచారం."
+        ]
+    },
+    "Kannada": {
+        "directive": (
+            "ನಾಗರಿಕರು ಕನ್ನಡ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿದ್ದಾರೆ.\n"
+            "ಮುಖ್ಯ ನಿಯಮ: ನಿಮ್ಮ ಸಂಪೂರ್ಣ ಉತ್ತರವು 100% ಕನ್ನಡ ಲಿಪಿಯಲ್ಲೇ ಇರಬೇಕು."
+        ),
+        "greeting_sample": "ನಮಸ್ಕಾರ",
+        "greeting_msg": "ನಮಸ್ಕಾರ! ನಾನು ಭಾರತ್‌ಅಸಿಸ್ಟ್, ನಿಮ್ಮ ನಾಗರಿಕ ಸಹಾಯಕ. ಇಂದು ಸರ್ಕಾರಿ ಸೇವೆಗಳು ಅಥವಾ ಕಲ್ಯಾಣ ಯೋಜನೆಗಳಲ್ಲಿ ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?",
+        "greeting_with_name": "ನಮಸ್ಕಾರ {name} ಅವರೇ! ನಾನು ಭಾರತ್‌ಅಸಿಸ್ಟ್. ಇಂದು ಸರ್ಕಾರಿ ಸೇವೆಗಳು ಅಥವಾ ಯೋಜನೆಗಳಲ್ಲಿ ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?",
+        "not_found_msg": "ಕ್ಷಮಿಸಿ, ಈ ಮಾಹಿತಿಯು ನಮ್ಮ ಡೇಟಾಬೇಸ್‌ನಲ್ಲಿ ಲಭ್ಯವಿಲ್ಲ. ನಾನು ನಿಮಗೆ ಬೇರೆ ಯಾವುದೇ ಸರ್ಕಾರಿ ಸೇವೆಯಲ್ಲಿ ಸಹಾಯ ಮಾಡಬಹುದೇ?",
+        "sections": [
+            "**ಸಂಕ್ಷಿಪ್ತ ಮಾಹಿತಿ**: ಸೇವೆಯ ಬಗ್ಗೆ 1-2 ಸ್ಪಷ್ಟ ವಾಕ್ಯಗಳು.",
+            "**ಅರ್ಜಿ ಸಲ್ಲಿಸುವ ವಿಧಾನ**: ಹಂತ ಹಂತವಾದ ವಿವರಗಳು (1., 2., 3.).",
+            "**ಅಗತ್ಯ ದಾಖಲೆಗಳು**: ಬೇಕಾಗುವ ದಾಖಲೆಗಳ ಪಟ್ಟಿ.",
+            "**ಶುಲ್ಕ ಮತ್ತು ಕಾಲಾವಧಿ**: ಅಂದಾಜು ವೆಚ್ಚ ಮತ್ತು ದಿನಗಳು.",
+            "**ಪ್ರಮುಖ ಸಲಹೆ**: ಅಧಿಕೃತ ಪೋರ್ಟಲ್ ಅಥವಾ ಸಲಹೆ."
+        ]
+    },
+    "Malayalam": {
+        "directive": (
+            "പൗരൻ മലയാളം ഭാഷ തിരഞ്ഞെടുത്തു.\n"
+            "പ്രധാന നിർദ്ദേശം: നിങ്ങളുടെ പൂർണ്ണമായ മറുപടി 100% മലയാളത്തിൽ മാത്രമായിരിക്കണം."
+        ),
+        "greeting_sample": "നമസ്കാരം",
+        "greeting_msg": "നമസ്കാരം! ഞാൻ ഭാരത് അസിസ്റ്റ്, നിങ്ങളുടെ പൗര സഹായി. ഇന്ന് സർക്കാർ സേവനങ്ങളിലോ ക്ഷേമ പദ്ധതികളിലോ ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?",
+        "greeting_with_name": "നമസ്കാരം {name}! ഞാൻ ഭാരത് അസിസ്റ്റ്. ഇന്ന് സർക്കാർ സേവനങ്ങളിലോ പദ്ധതികളിലോ ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?",
+        "not_found_msg": "ക്ഷമിക്കണം, ഈ വിവരം ഞങ്ങളുടെ ഡാറ്റാബേസിൽ ലഭ്യമല്ല. മറ്റ് ഏതെങ്കിലും സർക്കാർ സേവനത്തിൽ ഞാൻ നിങ്ങളെ സഹായിക്കട്ടെയോ?",
+        "sections": [
+            "**സംക്ഷിപ്ത വിവരണം**: സേവനത്തെക്കുറിച്ചുള്ള 1-2 വ്യക്തമായ വാക്യങ്ങൾ.",
+            "**അപേക്ഷാ നടപടിക്രമം**: ഘട്ടം ഘട്ടമായുള്ള വിവരങ്ങൾ (1., 2., 3.).",
+            "**ആവശ്യമായ രേഖകൾ**: ആവശ്യമായ രേഖകളുടെ പട്ടിക.",
+            "**ഫീസും സമയവും**: സർക്കാർ ഫീസും എടുക്കുന്ന സമയവും.",
+            "**പ്രധാന നിർദ്ദേശം**: ഔദ്യോഗിക പോർട്ടൽ അല്ലെങ്കിൽ പ്രായോഗിക നിർദ്ദേശം."
+        ]
+    },
+    "Urdu": {
+        "directive": (
+            "شہری نے اردو زبان منتخب کی ہے۔\n"
+            "اہم اصول: آپ کو اپنا پورا جواب 100% اردو میں ہی دینا ہوگا۔"
+        ),
+        "greeting_sample": "السلام علیکم",
+        "greeting_msg": "السلام علیکم! میں بھارت اسسٹ ہوں، آپ کا شہری مددگار۔ آج میں سرکاری خدمات یا فلاحی اسکیموں میں آپ کی کیا مدد کر سکتا ہوں؟",
+        "greeting_with_name": "السلام علیکم {name}! میں بھارت اسسٹ ہوں۔ آج میں سرکاری خدمات یا اسکیموں میں آپ کی کیا مدد کر سکتا ہوں؟",
+        "not_found_msg": "معذرت، یہ معلومات ہمارے ڈیٹا بیس میں دستیاب نہیں ہے۔ کیا میں کسی اور سرکاری سروس میں آپ کی مدد کر سکتا ہوں؟",
+        "sections": [
+            "**مختصر معلومات**: سروس کے بارے میں 1-2 واضح جملے۔",
+            "**درخواست کا طریقہ کار**: واضح مراحل (1.، 2.، 3.)۔",
+            "**مطلوبہ دستاویزات**: شناختی اور پتہ کے ضروری ثبوت۔",
+            "**فیس اور درکار وقت**: سرکاری فیس اور متوقع دن۔",
+            "**اہم مشورہ**: سرکاری پورٹل یا عملی مشورہ۔"
+        ]
+    },
+    "Odia": {
+        "directive": (
+            "ନାଗରିକ ଓଡ଼ିଆ ଭାଷା ଚୟନ କରିଛନ୍ତି।\n"
+            "ମୁଖ୍ୟ ନିୟମ: ଆପଣଙ୍କର ସମ୍ପୂର୍ଣ୍ଣ ଉତ୍ତର ୧୦୦% ଓଡ଼ିଆ ଲିପିରେ ହେବା ଆବଶ୍ୟକ।"
+        ),
+        "greeting_sample": "ନମସ୍କାର",
+        "greeting_msg": "ନମସ୍କାର! ମୁଁ ଭାରତଆସିଷ୍ଟ, ଆପଣଙ୍କର ନାଗରିକ ସହାୟକ। ଆଜି ମୁଁ ସରକାରୀ ସେବା ବା କଲ୍ୟାଣକାରୀ ଯୋଜନାରେ ଆପଣଙ୍କୁ କିପରି ସାହାଯ୍ୟ କରିପାରିବି?",
+        "greeting_with_name": "ନମସ୍କାର {name}! ମୁଁ ଭାରତଆସିଷ୍ଟ। ଆଜି ମୁଁ ସରକାରୀ ସେବା ବା ଯୋଜନାରେ ଆପଣଙ୍କୁ କିପରି ସାହାଯ୍ୟ କରିପାରିବି?",
+        "not_found_msg": "କ୍ଷମା କରିବେ, ଏହି ସୂଚନା ଆମ ଡାଟାବେସରେ ଉପଲବ୍ଧ ନାହିଁ। ମୁଁ ଆପଣଙ୍କୁ ଅନ୍ୟ କୌଣସି ସରକାରୀ ସେବାରେ ସାହାଯ୍ୟ କରିପାରିବି କି?",
+        "sections": [
+            "**ସଂକ୍ଷିପ୍ତ ସୂଚନା**: ସେବା ବିଷୟରେ 1-2ଟି ସ୍ପଷ୍ਟ ବାକ୍ୟ।",
+            "**ଆବେଦନ ପ୍ରକ୍ରିୟା**: ସ୍ପଷ୍ਟ ପଦକ୍ଷେପ (1., 2., 3.)।",
+            "**ଆବଶ୍ୟକୀୟ କାଗଜପତ୍ର**: ଆବଶ୍ୟକ ପରିଚୟ ଏବଂ ଠିକଣା ପ୍ରମାଣ।",
+            "**ଫି ଏବଂ ସମୟ**: ଆନୁମାନିକ ଖର୍ଚ୍ଚ ଏବଂ ସମୟ।",
+            "**ମହତ୍ତ୍ୱପୂର୍ଣ୍ଣ ପରାମର୍ଶ**: ଅଫିସିଆଲ୍ ପୋର୍ଟାଲ୍ ବା ପରାମର୍ଶ।"
+        ]
+    }
+}
 
-Verified context:
----
-{context}
----
 
-Citizen question: {question}
+# ============================================================
+# GREETINGS & INTENT HELPERS
+# ============================================================
 
-Helpful civic answer:"""
+GREETING_PATTERNS = [
+    r"^(?:hi|hello|hey|hola|heya)(?:\s+(?:there|all|bot|assistant|bharatassist))?[!?. ]*$",
+    r"^(?:namaste|namaskar|pranam|namaskaram|namaskara|vanakkam|sat\s*sri\s*akal|sasriakal|satshriakal|kiddan|kida|adaab|salam|assalam\s*o?\s*alaikum|as-salamu\s*alaykum)(?:\s+ji)?[!?. ]*$",
+    r"^(?:good\s+(?:morning|afternoon|evening|day)|have\s+a\s+good\s+day)[!?. ]*$",
+    r"^(?:who\s+are\s+you|what\s+is\s+your\s+name|what\s+can\s+you\s+do|how\s+are\s+you|how\s+do\s+you\s+work|introduce\s+yourself|tell\s+me\s+about\s+yourself)[!?. ]*$",
+    r"^(?:help|help\s+me|can\s+you\s+help\s+me|madad|sahayata)[!?. ]*$",
+    r"^[\u0928\u092e\u0938\u094d\u0924\u0947\u092a\u094d\u0930\u0923\u093e\u092e\u0938\u0924\u093f\u0938\u094d\u0930\u0940\u0905\u0915\u093e\u0932!?. ]+$"
+]
 
-CIVIC_CHATBOT_PROMPT = """You are BharatAssist, an intelligent, warm, polite, and practical AI Civic Assistant for Indian citizens.
 
-Core Guidelines:
-1. Conversational Demeanor:
-   - Talk naturally, warmly, and politely like an experienced civic helpdesk officer.
-   - If the citizen ONLY sends a greeting or pleasantry (e.g. "kidda ho", "sat sri akal", "namaste", "hello"):
-     * Respond warmly and briefly in the same language.
-     * Ask how you can assist them with Indian government services or welfare schemes today.
-   - If the citizen asks an ACTUAL QUESTION about a service, document, or scheme (e.g. Aadhaar Card, Driving Licence, PAN Card, certificates):
-     * DO NOT waste time repeating introductory pleasantries ("I am BharatAssist, your civic assistant...").
-     * Jump straight into the helpful, structured answer!
+def is_conversational_greeting(text: str) -> bool:
+    """
+    Detect whether user text is purely a greeting, introduction, or pleasantry.
+    """
+    if not text:
+        return False
+    clean = text.strip().lower()
+    # Normalize punctuation and spaces
+    clean_normalized = re.sub(r"\s+", " ", clean)
+    for pat in GREETING_PATTERNS:
+        if re.search(pat, clean_normalized, re.IGNORECASE):
+            return True
+    return False
 
-2. Structured Answer Pattern (Clean, Readable & Citizen-Friendly):
-   - Always organize your response in clear, structured sections:
-     * **ਸੰਖੇਪ ਜਾਣਕਾਰੀ (Quick Summary)**: 1-2 clear sentences explaining the service.
-     * **ਅਪਲਾਈ ਕਰਨ ਦਾ ਤਰੀਕਾ (Step-by-Step Procedure)**: Clear, numbered steps (1., 2., 3.).
-     * **ਜ਼ਰੂਰੀ ਦਸਤਾਵੇਜ਼ (Required Documents)**: Bulleted list of needed identity/address proofs.
-     * **ਫੀਸ ਅਤੇ ਸਮਾਂ (Fees & Processing Time)**: Exact cost and estimated days.
-     * **ਮਹੱਤਵਪੂਰਨ ਸੁਝਾਅ (Helpful Tip)**: Official portal link or practical advice.
-   - Use bold labels for key details so citizens can scan quickly.
 
-3. Pure Language & Zero English Clutter:
-   - Selected language: {language}.
-   - When responding in Punjabi, Hindi, or any Indian language:
-     * Write 100% in that language's native script.
-     * CRITICAL: DO NOT insert repetitive English translations inside parentheses (for example, avoid writing "(Aadhaar Seva Kendra)", "(Fingerprints)", "(Enrolment Form)"). Use clean, natural native vocabulary so speech engines read smoothly in one consistent, authentic voice.
-   - If {language} is English: respond in clear, accessible English.
-"""
+def get_not_found_response(language: str = "English") -> str:
+    """
+    Return standard polite decline when service/information is not available in database.
+    Format: 'I am sorry, this information is not available in our database. May I help you with anything else?'
+    """
+    lang_key = language if language in LANGUAGE_SPECS else "English"
+    return LANGUAGE_SPECS[lang_key]["not_found_msg"]
+
+
+def get_greeting_response(language: str = "English", citizen_name: str = None) -> str:
+    """
+    Return warm localized greeting.
+    """
+    lang_key = language if language in LANGUAGE_SPECS else "English"
+    spec = LANGUAGE_SPECS[lang_key]
+    if citizen_name and citizen_name.strip():
+        name = citizen_name.strip()
+        template = spec.get("greeting_with_name", spec["greeting_msg"])
+        return template.format(name=name)
+    return spec["greeting_msg"]
 
 
 # ============================================================
@@ -171,47 +387,85 @@ def simplify_document(text: str, language: str = "English") -> str:
 # UNIFIED CONVERSATIONAL AI ASSISTANT
 # ============================================================
 
-def generate_assistant_response(question: str, context_chunks: list = None, language: str = "English", citizen_name: str = None) -> str:
+def generate_assistant_response(
+    question: str,
+    context_chunks: list = None,
+    language: str = "English",
+    citizen_name: str = None
+) -> str:
     """
     Unified, intelligent conversational assistant engine.
-    Handles greetings, small talk, and civic inquiries naturally without hardcoded keyword rules.
-    Knows the citizen's name if logged in and verified.
+    - If context_chunks is empty:
+      * If user sends a greeting/pleasantry: responds warmly without decline.
+      * If user asks a question not in database: politely responds that the information
+        is not available in our database and asks if it may help with anything else.
+        NEVER answers out-of-database queries from Gemini general knowledge.
+    - If context_chunks is provided:
+      * Answers strictly using verified database context.
+      * Strictly forbids hallucinating out-of-database services or general knowledge.
     """
+    lang_key = language if language in LANGUAGE_SPECS else "English"
+    spec = LANGUAGE_SPECS[lang_key]
+
+    has_context = bool(context_chunks and len(context_chunks) > 0)
+
+    # 1. No verified database context found
+    if not has_context:
+        if is_conversational_greeting(question):
+            return get_greeting_response(language=lang_key, citizen_name=citizen_name)
+        # Not a greeting, and no context in database: Polite decline
+        return get_not_found_response(language=lang_key)
+
+    # 2. Verified database context is available
     if not is_llm_available():
-        if context_chunks:
-            return "<strong>Verified Information:</strong><br><br>" + "<br><br>".join(context_chunks)
-        return (
-            "Hello! I am BharatAssist, your civic assistant for Indian government services. "
-            "Please configure the GEMINI_API_KEY to enable conversational AI answers, or browse the Services Directory."
-        )
+        return "<strong>Verified Information:</strong><br><br>" + "<br><br>".join(context_chunks)
 
-    if context_chunks and len(context_chunks) > 0:
-        context_str = (
-            "--- VERIFIED GOVERNMENT SERVICE CONTEXT ---\n"
-            + "\n\n".join(context_chunks)
-            + "\n-----------------------------------------"
-        )
-    else:
-        context_str = "(No specific service context available in local database. Answer conversationally or with general civic knowledge.)"
+    context_str = (
+        "--- VERIFIED GOVERNMENT SERVICE CONTEXT ---\n"
+        + "\n\n".join(context_chunks)
+        + "\n-----------------------------------------"
+    )
 
-    target_lang = language or "the citizen's language"
-    base_instructions = CIVIC_CHATBOT_PROMPT.format(language=target_lang)
+    sections_formatted = "\n".join([f"     * {s}" for s in spec["sections"]])
+
+    prompt_instructions = f"""You are BharatAssist, an intelligent, warm, polite, and practical AI Civic Assistant for Indian citizens.
+
+Core Guidelines:
+1. STRICT DATABASE GROUNDING POLICY (CRITICAL):
+   - You are strictly an assistant for the government services present in our database.
+   - You must answer ONLY using the verified context from our database provided below.
+   - If the citizen's question is NOT answered by the provided verified context, OR if they ask about something not present in the context:
+     YOU MUST NOT invent, hallucinate, or answer from your general knowledge or Gemini training data!
+     DO NOT bypass the database under any circumstances.
+     Instead, reply ONLY with this exact sentence:
+     "{spec['not_found_msg']}"
+
+2. Structured Answer Pattern (When Context Answers the Question):
+   - Organize your response clearly in structured sections:
+{sections_formatted}
+   - Use bold labels for key details so citizens can scan quickly.
+
+3. Language Directives:
+   - Selected Language: {lang_key}
+   - {spec['directive']}
+"""
 
     if citizen_name and citizen_name.strip():
         clean_name = citizen_name.strip()
+        greeting_word = spec.get("greeting_sample", "Namaste")
         identity_instructions = f"""
 4. Citizen Identity & Personal Greeting:
    - The citizen's verified name is "{clean_name}".
-   - You know their name! When greeting or acknowledging the citizen, address them warmly and politely by their name (e.g., "Namaste {clean_name} ji!", "Sat Sri Akal {clean_name} ji!", etc. matching the selected language).
+   - When greeting or addressing the citizen, address them warmly and politely by their name (e.g., "{greeting_word}, {clean_name}!").
 """
     else:
         identity_instructions = """
 4. Citizen Identity:
    - The user is currently browsing as an unauthenticated guest.
-   - Do NOT assume, invent, or use any personal name (do not say any person's name or make up a name). Keep your tone polite and neutral.
+   - Do NOT assume, invent, or use any personal name. Keep your tone polite and neutral.
 """
 
-    prompt = f"""{base_instructions}{identity_instructions}
+    prompt = f"""{prompt_instructions}{identity_instructions}
 
 Context:
 {context_str}
@@ -222,15 +476,15 @@ BharatAssist:"""
 
     try:
         response = _call_gemini(contents=prompt)
-        return response.text
+        text_resp = (response.text or "").strip()
+        if not text_resp:
+            return get_not_found_response(language=lang_key)
+        return text_resp
     except Exception as e:
         print("Gemini assistant generation error:", repr(e))
         if context_chunks:
             return "<strong>Verified Information:</strong><br><br>" + "<br><br>".join(context_chunks)
-        return (
-            "Hello! I am BharatAssist. I am currently having difficulty connecting to my AI service. "
-            "Please try again in a moment, or visit the official portal at https://www.india.gov.in/."
-        )
+        return get_not_found_response(language=lang_key)
 
 
 def answer_query(question: str, context_chunks: list, language: str = "English", citizen_name: str = None) -> str:
@@ -243,11 +497,6 @@ def answer_greeting(question: str, language: str = "English", citizen_name: str 
 
 def answer_general_fallback(question: str, language: str = "English", citizen_name: str = None) -> str:
     return generate_assistant_response(question=question, context_chunks=[], language=language, citizen_name=citizen_name)
-
-
-def is_conversational_greeting(text: str) -> bool:
-    """Legacy helper preserved for backward compatibility."""
-    return False
 
 
 # ============================================================
@@ -265,7 +514,6 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm", language
     if not audio_bytes or len(audio_bytes) == 0:
         raise ValueError("Audio recording is empty.")
 
-    # Sanitize mime_type (e.g. audio/webm;codecs=opus -> audio/webm)
     clean_mime = mime_type.split(";")[0].strip().lower() if mime_type else "audio/webm"
     if clean_mime not in {"audio/webm", "audio/wav", "audio/mp3", "audio/ogg", "audio/m4a"}:
         clean_mime = "audio/webm"
@@ -279,7 +527,6 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm", language
     response = _call_gemini(contents=[part, prompt])
     transcript = (response.text or "").strip()
 
-    # If Gemini returns a bracketed 'no speech' message, clean it
     if transcript.lower() in {"[no speech detected]", "no speech detected", "silence"}:
         return ""
     return transcript
@@ -334,7 +581,6 @@ def _backup_neural_tts(text: str, language: str = "English") -> bytes:
     clean = re.sub(r"<[^>]+>", " ", text)
     clean = re.sub(r"\s+", " ", clean).strip()[:600]
 
-    # Chunk into <= 120 character sentences for frame-accurate synthesis
     parts = re.split(r"([।?!.\n]+)", clean)
     chunks = []
     curr = ""

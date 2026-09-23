@@ -1357,6 +1357,7 @@ def api_auth_send_otp():
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            default_name = name if name else f"Citizen ({phone[-4:]})"
             cursor.execute("""
                 INSERT INTO users (phone, name, otp, otp_expiry, is_verified)
                 VALUES (?, ?, ?, ?, 0)
@@ -1365,7 +1366,7 @@ def api_auth_send_otp():
                     otp = excluded.otp,
                     otp_expiry = excluded.otp_expiry,
                     last_login = CURRENT_TIMESTAMP
-            """, (phone, name if name else None, otp, expiry_iso))
+            """, (phone, default_name, otp, expiry_iso))
             conn.commit()
 
         masked = mask_phone_number(phone)
@@ -2082,6 +2083,28 @@ def api_assistant():
                     })
 
             context_texts = [c.get("text", "") for c in retrieved_chunks if c.get("text")]
+        elif not llm.is_conversational_greeting(sanitized_question):
+            # Fallback: check exact keyword match in database services table
+            q_lower = sanitized_question.lower()
+            all_services = get_all_services()
+            for s in all_services:
+                s_name = (s.get("name") or "").lower()
+                clean_name = re.sub(r"[\(\)]", "", s_name).strip()
+                tokens = [t for t in clean_name.split() if len(t) > 3]
+                if s_name in q_lower or (tokens and all(t in q_lower for t in tokens[:2])):
+                    is_grounded = True
+                    context_service = s.get("name")
+                    s_url = normalize_url(s.get("source_url"))
+                    if s_url:
+                        sources.append({
+                            "name": s.get("name") or "Official Portal",
+                            "source_url": s_url
+                        })
+                    context_texts = [
+                        f"Service: {s.get('name')}\nCategory: {s.get('category')}\nEligibility: {s.get('eligibility')}\nDocuments: {s.get('documents_required')}\nSteps: {s.get('steps')}\nFees: {s.get('fees')}\nProcessing Time: {s.get('processing_time')}\nOfficial Portal: {s.get('source_url')}"
+                    ]
+                    best_score = max(best_score, 0.5)
+                    break
 
         # ----------------------------------------------------
         # 4. Natural Conversational LLM Response
