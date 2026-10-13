@@ -26,7 +26,7 @@ else:
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from utils import llm, rag, redact, metrics
+from utils import llm, rag, redact, metrics, matcher
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "bharatassist-citizen-privacy-shield-secret-2026")
@@ -123,6 +123,19 @@ ALLOWED_FILE_EXTENSIONS = {
     ".pdf",
     ".docx",
     ".txt",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp"
+}
+
+IMAGE_FILE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp"
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -685,104 +698,104 @@ def extract_uploaded_text(uploaded_file):
         )
 
     # --------------------------------------------------------
-    # PDF
+    # PDF (Supports pypdf or PyPDF2)
     # --------------------------------------------------------
 
     if filename.endswith(".pdf"):
 
+        pdf_reader_cls = None
         try:
-
-            import PyPDF2
-
+            import pypdf
+            pdf_reader_cls = pypdf.PdfReader
         except ImportError:
+            try:
+                import PyPDF2
+                pdf_reader_cls = PyPDF2.PdfReader
+            except ImportError:
+                pass
 
-            raise Exception(
-                "PDF support is not installed. "
-                "Run: pip install PyPDF2"
-            )
+        if not pdf_reader_cls:
+            raise Exception("PDF support is not installed. Run: pip install pypdf")
 
         try:
-
-            reader = PyPDF2.PdfReader(
-                uploaded_file
-            )
-
+            reader = pdf_reader_cls(uploaded_file)
             pages = []
-
             for page in reader.pages:
-
                 page_text = page.extract_text()
-
                 if page_text:
                     pages.append(page_text)
 
             result = "\n".join(pages)
-
             if not result.strip():
-
-                raise Exception(
-                    "No readable text was found in this PDF."
-                )
-
+                raise Exception("No readable text was found in this PDF.")
             return result
 
         except Exception as e:
-
-            raise Exception(
-                f"Could not read PDF: {str(e)}"
-            )
+            raise Exception(f"Could not read PDF: {str(e)}")
 
     # --------------------------------------------------------
-    # DOCX
+    # DOCX (Supports python-docx or native ZIP/XML parsing)
     # --------------------------------------------------------
 
     if filename.endswith(".docx"):
 
+        # 1. Try python-docx if installed
         try:
-
             from docx import Document
-
-        except ImportError:
-
-            raise Exception(
-                "DOCX support is not installed. "
-                "Run: pip install python-docx"
-            )
-
-        try:
-
-            document = Document(
-                uploaded_file
-            )
-
-            paragraphs = []
-
-            for paragraph in document.paragraphs:
-
-                text = paragraph.text.strip()
-
-                if text:
-                    paragraphs.append(text)
-
+            document = Document(uploaded_file)
+            paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
             result = "\n".join(paragraphs)
+            if result.strip():
+                return result
+        except ImportError:
+            pass
+        except Exception:
+            pass
 
-            if not result.strip():
+        # 2. Native ZIP/XML parsing fallback
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
 
-                raise Exception(
-                    "No readable text was found in this DOCX."
-                )
-
-            return result
-
+            uploaded_file.seek(0)
+            with zipfile.ZipFile(uploaded_file) as zf:
+                xml_content = zf.read("word/document.xml")
+                tree = ET.fromstring(xml_content)
+                texts = []
+                for elem in tree.iter():
+                    if elem.tag.endswith("}t") and elem.text:
+                        texts.append(elem.text)
+                result = " ".join(texts).strip()
+                if not result:
+                    raise Exception("No readable text was found in this DOCX.")
+                return result
         except Exception as e:
+            raise Exception(f"Could not read DOCX: {str(e)}")
 
-            raise Exception(
-                f"Could not read DOCX: {str(e)}"
-            )
+    # --------------------------------------------------------
+    # IMAGE TEXT EXTRACTION (OCR via Gemini Vision)
+    # --------------------------------------------------------
+
+    ext = os.path.splitext(filename)[1]
+    if ext in IMAGE_FILE_EXTENSIONS:
+        uploaded_file.seek(0)
+        img_bytes = uploaded_file.read()
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp"
+        }
+        mime_type = mime_map.get(ext, "image/png")
+        extracted_ocr = llm.extract_text_from_image(image_bytes=img_bytes, mime_type=mime_type)
+        if not extracted_ocr.strip():
+            raise Exception("No readable text could be recognized from this document image.")
+        return extracted_ocr
 
     raise Exception(
         "Unsupported file type. "
-        "Please upload PDF, DOCX or TXT."
+        "Please upload PDF, DOCX, TXT, or document images (PNG, JPG, WEBP)."
     )
 
 
@@ -882,35 +895,42 @@ def simplify_document(text):
     # Maximum 10 sentences
     useful = useful[:10]
 
-    output = []
-
-    output.append(
-        "<strong>What this document says</strong>"
-    )
-
-    output.append(
-        "<p class='text-muted mb-3'>"
-        "Here is a simpler breakdown of the important information:"
-        "</p>"
-    )
-
-    output.append("<ul class='mb-0'>")
-
+    warning_keywords = ["penalty", "fine", "forfeiture", "terminate", "termination", "court", "dispute", "interest", "breach", "liable", "liability", "cancel", "cancellation", "late fee", "arrest"]
+    warnings_found = []
+    important_points = []
+    
     for sentence in useful:
+        lower = sentence.lower()
+        if any(wk in lower for wk in warning_keywords):
+            warnings_found.append(sentence)
+        else:
+            important_points.append(sentence)
 
-        # Escape HTML
-        safe_sentence = (
-            sentence
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+    output = []
+    # 1. Executive Summary
+    output.append("### 📋 Executive Summary")
+    summary_text = " ".join(sentences[:2]) if len(sentences) >= 2 else sentences[0]
+    output.append(f"<p>{summary_text}</p>")
 
-        output.append(
-            f"<li class='mb-2'>{safe_sentence}</li>"
-        )
-
+    # 2. Important Points
+    output.append("### 💡 Important Points to Keep in Mind")
+    output.append("<ul>")
+    pts = important_points if important_points else useful[:4]
+    for sentence in pts:
+        safe_s = sentence.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        output.append(f"<li>{safe_s}</li>")
     output.append("</ul>")
+
+    # 3. Warnings & Red Flags
+    output.append("### ⚠️ Warnings & Red Flags")
+    if warnings_found:
+        output.append("<ul class='text-danger'>")
+        for sentence in warnings_found:
+            safe_s = sentence.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            output.append(f"<li><strong>Caution:</strong> {safe_s}</li>")
+        output.append("</ul>")
+    else:
+        output.append("<p class='text-success'><i class='fa-solid fa-circle-check'></i> No major legal risks or red flags detected in this document based on the provided text.</p>")
 
     return "\n".join(output)
 
@@ -1694,7 +1714,7 @@ def api_simplify():
                     "success": False,
                     "error": (
                         "Unsupported file type. "
-                        "Please upload PDF, DOCX or TXT."
+                        "Please upload PDF, DOCX, TXT, or document images (PNG, JPG, WEBP)."
                     )
                 }), 400
 
@@ -1992,6 +2012,20 @@ def api_assistant_history_clear():
             "error": str(e)
         }), 500
 
+def is_general_documents_question(question: str) -> bool:
+    q = question.lower().strip()
+
+    patterns = [
+        "general documents required",
+        "general documents needed",
+        "what documents are usually required",
+        "documents usually required for government services",
+        "what documents are required for government services",
+        "common documents required for government services",
+    ]
+
+    return any(pattern in q for pattern in patterns)
+
 
 # ============================================================
 # API - AI ASSISTANT (RAG + GEMINI GROUNDED)
@@ -2048,63 +2082,102 @@ def api_assistant():
         sanitized_question, pii_count = redact.redact_pii(question, user=session.get("user"))
 
         # ----------------------------------------------------
+        # ----------------------------------------------------
         # 2. Vector Retrieval (ChromaDB + Sentence Transformers)
         # ----------------------------------------------------
-        CONFIDENCE_THRESHOLD = 0.35
         retrieved_chunks, best_score = [], 0.0
+
         try:
             retrieved_chunks, best_score = rag.retrieve_relevant_chunks(
                 sanitized_question,
-                top_k=3
+                top_k=5
             )
         except Exception as rag_err:
-            print("RAG retrieval warning:", repr(rag_err))
+            try:
+                print("RAG retrieval warning:", repr(rag_err))
+            except Exception:
+                pass
+
+        try:
+            print(
+                f"RAG query: {sanitized_question!r} | "
+                f"best_score: {best_score:.3f} | "
+                f"results: {[c.get('name') for c in retrieved_chunks]}"
+            )
+        except Exception:
+            pass
 
         # ----------------------------------------------------
-        # 3. Context Grounding and Source Verification
+        # 3. Dynamic Service Matching & Intent Classification
         # ----------------------------------------------------
         sources = []
         context_service = None
         is_grounded = False
         context_texts = []
+        answer = None
 
-        if best_score >= CONFIDENCE_THRESHOLD and retrieved_chunks:
+        all_services = get_all_services()
+        match_result = matcher.extract_matched_service_intent(
+            query=sanitized_question,
+            services_catalog=all_services,
+            chroma_chunks=retrieved_chunks
+        )
+
+        match_status = match_result.get("status")
+
+        if match_status == "unsupported":
+            is_grounded = False
+            answer = llm.get_not_found_response(language=language)
+
+        elif match_status == "clarification_needed":
+            is_grounded = False
+            answer = match_result.get("message")
+
+        elif match_status == "matched":
+            matched_svc = match_result.get("service")
+            context_service = matched_svc.get("name")
             is_grounded = True
-            context_service = retrieved_chunks[0].get("name")
+            
+            # Grounded evidence validation
+            detected_info = match_result.get("detected_info", [])
+            evidence_val = matcher.validate_grounded_evidence(matched_svc, detected_info)
 
-            seen_urls = set()
-            for chunk in retrieved_chunks:
-                s_url = normalize_url(chunk.get("source_url"))
-                if s_url and s_url not in seen_urls:
-                    seen_urls.add(s_url)
-                    sources.append({
-                        "name": chunk.get("name") or "Official Portal",
-                        "source_url": s_url
-                    })
+            # Build source URL
+            s_url = normalize_url(matched_svc.get("source_url"))
+            if s_url:
+                sources.append({
+                    "name": matched_svc.get("name") or "Official Portal",
+                    "source_url": s_url
+                })
 
-            context_texts = [c.get("text", "") for c in retrieved_chunks if c.get("text")]
-        elif not llm.is_conversational_greeting(sanitized_question):
-            # Fallback: check exact keyword match in database services table
-            q_lower = sanitized_question.lower()
-            all_services = get_all_services()
-            for s in all_services:
-                s_name = (s.get("name") or "").lower()
-                clean_name = re.sub(r"[\(\)]", "", s_name).strip()
-                tokens = [t for t in clean_name.split() if len(t) > 3]
-                if s_name in q_lower or (tokens and all(t in q_lower for t in tokens[:2])):
-                    is_grounded = True
-                    context_service = s.get("name")
-                    s_url = normalize_url(s.get("source_url"))
-                    if s_url:
-                        sources.append({
-                            "name": s.get("name") or "Official Portal",
-                            "source_url": s_url
-                        })
-                    context_texts = [
-                        f"Service: {s.get('name')}\nCategory: {s.get('category')}\nEligibility: {s.get('eligibility')}\nDocuments: {s.get('documents_required')}\nSteps: {s.get('steps')}\nFees: {s.get('fees')}\nProcessing Time: {s.get('processing_time')}\nOfficial Portal: {s.get('source_url')}"
-                    ]
-                    best_score = max(best_score, 0.5)
-                    break
+            context_texts = [
+                f"Service: {matched_svc.get('name')}\n"
+                f"Category: {matched_svc.get('category')}\n"
+                f"State: {matched_svc.get('state')}\n"
+                f"Eligibility: {matched_svc.get('eligibility')}\n"
+                f"Documents: {matched_svc.get('documents_required')}\n"
+                f"Steps: {matched_svc.get('steps')}\n"
+                f"Fees: {matched_svc.get('fees')}\n"
+                f"Processing Time: {matched_svc.get('processing_time')}\n"
+                f"Official Portal: {matched_svc.get('source_url')}"
+            ]
+            best_score = max(best_score, match_result.get("score", 0.5) / 10.0, 0.45)
+
+        else:
+            # Fallback or greeting
+            if llm.is_conversational_greeting(sanitized_question):
+                is_grounded = False
+            elif is_general_documents_question(sanitized_question):
+                is_grounded = False
+                answer = (
+                    "Sorry, I don't have a general list of document requirements "
+                    "in my database. Requirements depend on the government service "
+                    "and state. Please select a service available in BharatAssist "
+                    "to get information specific to that service."
+                )
+            else:
+                is_grounded = False
+                answer = llm.get_not_found_response(language=language)
 
         # ----------------------------------------------------
         # 4. Natural Conversational LLM Response
@@ -2112,12 +2185,21 @@ def api_assistant():
         current_user = session.get("user")
         citizen_name = current_user.get("name") if current_user else None
 
-        answer = llm.generate_assistant_response(
-            question=sanitized_question,
-            context_chunks=context_texts if is_grounded else [],
-            language=language,
-            citizen_name=citizen_name
-        )
+        if answer is None:
+            if is_grounded and context_texts:
+                answer = llm.generate_assistant_response(
+                    question=sanitized_question,
+                    context_chunks=context_texts,
+                    language=language,
+                    citizen_name=citizen_name
+                )
+            elif llm.is_conversational_greeting(sanitized_question):
+                answer = llm.get_greeting_response(
+                    language=language,
+                    citizen_name=citizen_name
+                )
+            else:
+                answer = llm.get_not_found_response(language=language)
 
         # ----------------------------------------------------
         # 5. Persist Chat History for Logged-In Citizen
@@ -2138,20 +2220,26 @@ def api_assistant():
                     ))
                     conn.commit()
             except Exception as hist_err:
-                print("Failed to save chat history:", repr(hist_err))
-
+                try:
+                    print("Failed to save chat history:", repr(hist_err))
+                except Exception:
+                    pass
+    
         return jsonify({
             "success": True,
             "answer": answer,
             "sources": sources,
-            "confidence": best_score,
+            "confidence": round(best_score, 3),
             "context_service": context_service,
             "grounded": is_grounded,
             "pii_redacted": pii_count
         })
 
     except Exception as e:
-        print("Assistant error:", repr(e))
+        try:
+            print("Assistant error:", repr(e))
+        except Exception:
+            pass
         return jsonify({
             "success": False,
             "error": "Assistant could not process the request."

@@ -323,11 +323,29 @@
         color: var(--green);
     }
     /* Input section */
+    
+
+
     .assistant-input-area {
         background: #FFFFFF;
         border-top: 1px solid #E2E8F0;
         padding: 14px 16px 16px;
     }
+
+    .service-selection {
+        margin: 12px 16px 0;
+        padding: 14px;
+        border: 1px solid #D1E7DD;
+        border-radius: 12px;
+        background: #F0FDF4;
+        color: var(--slate-700);
+        font-size: 0.85rem;
+    }
+
+    .service-selection select {
+        min-width: 0;
+    }
+
 
     .assistant-form {
         display: flex;
@@ -641,6 +659,19 @@
                 <!-- ============================
                      INPUT AREA
                      ============================ -->
+                <div id="service-selection" class="service-selection" style="display: none;" aria-live="polite">
+                    <label for="available-services" class="form-label fw-semibold mb-2">
+                        This service may not be available yet. Choose a supported service:
+                    </label>
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <select id="available-services" class="form-select" aria-label="Choose an available government service">
+                            <option value="">-- Select a service --</option>
+                        </select>
+                        <button type="button" id="ask-selected-service" class="btn btn-outline-success text-nowrap">
+                            Ask about this service
+                        </button>
+                    </div>
+                </div>
 
                 <div class="assistant-input-area">
                     <div
@@ -773,6 +804,12 @@
     const autoSpeakToggle = document.getElementById("autoSpeakToggle");
     const languageSelect =
         document.getElementById("languageSelect");
+    const serviceSelection =
+        document.getElementById("service-selection");
+    const availableServicesSelect =
+        document.getElementById("available-services");
+    const askSelectedServiceBtn =
+        document.getElementById("ask-selected-service");
 
     const contextIndicator =
         document.getElementById("contextIndicator");
@@ -1997,6 +2034,30 @@
                         data.sources || []
                     );
 
+                    // Offer database-supported services when the answer is not grounded.
+                    if (serviceSelection && availableServicesSelect) {
+                        const services = Array.isArray(data.available_services)
+                            ? data.available_services.filter(
+                                service => typeof service === "string" && service.trim()
+                            )
+                            : [];
+
+                        availableServicesSelect.innerHTML =
+                            '<option value="">-- Select a service --</option>';
+
+                        if (data.grounded === false && services.length > 0) {
+                            services.forEach(function(service) {
+                                const option = document.createElement("option");
+                                option.value = service;
+                                option.textContent = service;
+                                availableServicesSelect.appendChild(option);
+                            });
+                            serviceSelection.style.display = "block";
+                        } else {
+                            serviceSelection.style.display = "none";
+                        }
+                    }
+
                     // Read the answer aloud automatically if enabled
                     if (autoSpeakToggle && autoSpeakToggle.checked) {
                         speakText(
@@ -2069,6 +2130,21 @@
 
         }
     );
+
+    // Ask about the selected supported service using the existing chat form.
+    if (askSelectedServiceBtn && availableServicesSelect) {
+        askSelectedServiceBtn.addEventListener("click", function() {
+            const selectedService = availableServicesSelect.value;
+            if (!selectedService) {
+                availableServicesSelect.focus();
+                return;
+            }
+
+            questionInput.value = "Tell me about " + selectedService;
+            serviceSelection.style.display = "none";
+            assistantForm.requestSubmit();
+        });
+    }
 
 
     /* ==========================================

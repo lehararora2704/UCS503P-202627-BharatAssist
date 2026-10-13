@@ -304,6 +304,31 @@
         color: var(--green);
     }
 
+    .output-box h3 {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: 1.2rem;
+        margin-bottom: 0.6rem;
+        color: var(--navy);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .output-box h3:first-child {
+        margin-top: 0;
+    }
+
+    .output-box .legal-warning-alert {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-left: 4px solid #ef4444;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 10px;
+        color: #991b1b;
+    }
+
     .error-output {
         color: #b91c1c;
         background: #fff7f7;
@@ -532,7 +557,7 @@
                                     <div class="upload-description">
                                         Drag and drop here or click to browse
                                         <br>
-                                        PDF, DOCX or TXT · Maximum 10 MB
+                                        PDF, DOCX, TXT or Images (PNG, JPG, WEBP) · Maximum 10 MB
                                     </div>
 
                                     <span
@@ -549,7 +574,7 @@
                                     id="fileInput"
                                     name="file"
                                     class="d-none"
-                                    accept=".pdf,.docx,.txt"
+                                    accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.bmp"
                                 >
 
                             </div>
@@ -978,21 +1003,26 @@ document.addEventListener("DOMContentLoaded", function () {
                     );
 
 
-                    simplifiedOutput.innerHTML =
-                        data.simplified_text ||
-                        "Document simplified successfully.";
+                    let formattedText = data.simplified_text || "Document simplified successfully.";
+                    // Render markdown headers and lists into styled HTML
+                    formattedText = formattedText
+                        .replace(/^### (.*$)/gim, '<h3 class="mt-3 mb-2">$1</h3>')
+                        .replace(/^## (.*$)/gim, '<h3 class="mt-3 mb-2">$1</h3>')
+                        .replace(/^\* (.*$)/gim, '<li>$1</li>')
+                        .replace(/^- (.*$)/gim, '<li>$1</li>')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\n\n/g, '<br>');
 
+                    simplifiedOutput.innerHTML = formattedText;
 
                     resultContainer.classList.remove(
                         "d-none"
                     );
 
-
                     /*
                      * Bring the result into view without
                      * jumping the user to the top.
                      */
-
                     resultContainer.scrollIntoView({
                         behavior: "smooth",
                         block: "nearest"

@@ -93,18 +93,34 @@ def _call_gemini(contents, model_candidates=None, config=None):
 # PROMPT TEMPLATES & MULTILINGUAL SPECIFICATIONS
 # ============================================================
 
-SIMPLIFY_PROMPT = """You are simplifying an Indian government or legal document for a common citizen \
-with no legal background. Rewrite the following text in plain, simple {language} (use English if unspecified). \
-Preserve all factual details, eligibility rules, required documents, dates, fees, and steps exactly. \
-Do not omit any requirement. Use short sentences and structured bullet points. \
-Do not add a legal disclaimer yourself; the app displays one separately.
+SIMPLIFY_PROMPT = """You are an expert AI Legal & Civic Document Simplifier for Indian citizens. \
+A common citizen with no legal background has uploaded a legal agreement, government notice, circular, affidavit, contract, or scheme document.
+
+Rewrite and analyze the following document in plain, simple {language} (use English if unspecified).
+Structure your response into EXACTLY the following three clearly labeled sections:
+
+### 📋 Executive Summary
+Provide a clear, 2 to 3 paragraph plain-language overview of what this document is about, who it involves, and its primary purpose.
+
+### 💡 Important Points to Keep in Mind
+Provide a well-structured bulleted list of all critical requirements, including:
+- Key obligations, rights, or conditions
+- Deadlines, timelines, or effective dates
+- Required documents, proofs, or compliance steps
+- Fees, payment terms, deposits, or cost implications
+
+### ⚠️ Warnings & Red Flags
+Explicitly highlight any risks, hidden conditions, or critical cautions found in the document, such as:
+- Forfeiture clauses, financial penalties, interest charges, or late fines
+- Restrictive covenants, auto-renewal traps, or unfair termination clauses
+- Dispute jurisdiction, liability disclaimers, or loss of statutory benefits
+- If NO significant risks or red flags are detected in the document, explicitly state: "No major legal risks or red flags detected in this document based on the provided text."
 
 Document text:
 ---
 {text}
 ---
-
-Plain-language explanation:"""
+"""
 
 LANGUAGE_SPECS = {
     "English": {
@@ -346,7 +362,19 @@ def is_conversational_greeting(text: str) -> bool:
             return True
     return False
 
+def is_general_documents_question(question: str) -> bool:
+    q = question.lower().strip()
 
+    patterns = [
+        "general documents required",
+        "general documents needed",
+        "documents usually required for government services",
+        "what documents are usually required",
+        "what documents are required for government services",
+        "common documents required for government services",
+    ]
+
+    return any(pattern in q for pattern in patterns)
 def get_not_found_response(language: str = "English") -> str:
     """
     Return standard polite decline when service/information is not available in database.
@@ -373,14 +401,42 @@ def get_greeting_response(language: str = "English", citizen_name: str = None) -
 # DOCUMENT SIMPLIFICATION
 # ============================================================
 
+def extract_text_from_image(image_bytes: bytes, mime_type: str = "image/png") -> str:
+    """
+    Extract printed and handwritten text from document images using Gemini Vision.
+    Supports PNG, JPG, JPEG, WEBP, BMP.
+    """
+    if not is_llm_available():
+        raise RuntimeError("GEMINI_API_KEY is not configured in .env for OCR extraction.")
+
+    if not image_bytes or len(image_bytes) == 0:
+        raise ValueError("Image file is empty.")
+
+    clean_mime = (mime_type or "image/png").split(";")[0].strip().lower()
+    if clean_mime not in {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp"}:
+        clean_mime = "image/png"
+
+    part = types.Part.from_bytes(data=image_bytes, mime_type=clean_mime)
+    ocr_prompt = (
+        "You are an expert optical character recognition (OCR) and legal document transcription engine. "
+        "Extract all readable text, clauses, headings, tables, signatures, and stamps from this document image exactly as written. "
+        "Preserve line breaks and layout structure. Return ONLY the transcribed document text without conversational pleasantries."
+    )
+
+    response = _call_gemini(contents=[part, ocr_prompt])
+    return (response.text or "").strip()
+
+
 def simplify_document(text: str, language: str = "English") -> str:
-    """Simplify government/legal text using Gemini."""
+    """Simplify government/legal text using Gemini with Summary, Key Points, and Warnings."""
     if not is_llm_available():
         return "[LLM not configured] Set GEMINI_API_KEY in your .env file to enable AI simplification."
 
-    prompt = SIMPLIFY_PROMPT.format(text=text[:12000], language=language or "English")
+    prompt = SIMPLIFY_PROMPT.format(text=text[:16000], language=language or "English")
     response = _call_gemini(contents=prompt)
     return response.text
+
+
 
 
 # ============================================================
@@ -410,11 +466,54 @@ def generate_assistant_response(
     has_context = bool(context_chunks and len(context_chunks) > 0)
 
     # 1. No verified database context found
+        
     if not has_context:
         if is_conversational_greeting(question):
-            return get_greeting_response(language=lang_key, citizen_name=citizen_name)
-        # Not a greeting, and no context in database: Polite decline
+            return get_greeting_response(
+                language=lang_key,
+                citizen_name=citizen_name
+            )
+
+        # Allow helpful answers to general civic questions
+        if not is_llm_available():
+            return get_not_found_response(language=lang_key)
+
+        general_prompt = f"""You are BharatAssist, a helpful AI assistant for Indian citizens.
+
+The citizen selected this response language: {lang_key}.
+{spec['directive']}
+
+Instructions:
+1. Answer general questions about common government documents,
+   identity proofs, public services, and civic procedures helpfully.
+2. Do not say information is unavailable merely because the
+   question is not covered by the database.
+3. For general questions, use reliable general knowledge and
+   explain that exact requirements depend on the service and state.
+4. Never claim that a document is compulsory for every service.
+5. Do not invent exact fees, deadlines, eligibility rules, or
+   official links.
+6. For specific scheme or service rules that cannot be verified,
+   clearly say that the citizen should check the relevant official
+   government portal.
+7. Keep the response clear, practical, and easy to understand.
+8. Do not invent a citizen's name.
+
+Citizen's question:
+{question}
+
+Answer in {lang_key}:"""
+
+        try:
+            response = _call_gemini(contents=general_prompt)
+            answer = (response.text or "").strip()
+            if answer:
+                return answer
+        except Exception as e:
+            print("General assistant generation error:", repr(e))
+
         return get_not_found_response(language=lang_key)
+
 
     # 2. Verified database context is available
     if not is_llm_available():

@@ -51,7 +51,7 @@ def _get_embedder():
     if _embedder is None:
 
         _embedder = SentenceTransformer(
-            "all-MiniLM-L6-v2"
+            "sentence-transformers/LaBSE"
         )
 
     return _embedder
