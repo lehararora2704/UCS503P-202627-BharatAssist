@@ -184,14 +184,18 @@ def detect_info_request(text: str) -> List[str]:
 def extract_matched_service_intent(
     query: str,
     services_catalog: List[Dict[str, Any]],
-    chroma_chunks: List[Dict[str, Any]]
+    chroma_chunks: List[Dict[str, Any]],
+    context_service: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Scalable multi-stage service and intent matcher:
     1. Lexical and entity relevance scoring across the 215 records.
     2. Action congruence: prioritizes services specifically designed for that action.
     3. Integration with vector retrieval scores.
-    4. Guardrails for unsupported / out-of-scope / ambiguous queries.
+    4. Conversational context awareness: seamlessly retains active service context
+       for follow-up questions (fees, documents, eligibility, steps, processing time)
+       while switching cleanly when a new service is explicitly queried.
+    5. Guardrails for unsupported / out-of-scope / ambiguous queries.
     """
     clean_query = query.strip()
     q_lower = clean_query.lower()
@@ -205,7 +209,9 @@ def extract_matched_service_intent(
             "message": "This request is not covered by any Indian government civic service in our database."
         }
 
-    # 2. Check ambiguous queries needing clarification
+    # 2. Check ambiguous queries needing clarification (e.g. generic 'I need a certificate', 'how to change address')
+    # If the user asks a completely generic open-ended question without specifying which certificate or service,
+    # and did not explicitly say "for this" / "for that", clarify.
     is_amb, clarification_msg = is_generic_ambiguous(q_lower)
     if is_amb:
         return {
@@ -215,11 +221,45 @@ def extract_matched_service_intent(
             "message": clarification_msg
         }
 
-    # 3. Detect user actions and info types
+    # 3. Extract entities present in query
+    user_entities = set()
+    for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
+        if any(re.search(rf"\b{re.escape(syn)}\b", q_lower) for syn in syn_list):
+            user_entities.add(canonical)
+
+    # 4. Conversational follow-up resolution:
+    # If no new entity is introduced and an active context_service is present,
+    # check if this is a follow-up inquiry (e.g., fees, docs, steps, eligibility, time)
+    # or general inquiry referring back to the current context.
+    active_ctx_svc = None
+    if context_service:
+        ctx_name_clean = context_service.strip().lower()
+        for s in services_catalog:
+            if s.get("name", "").strip().lower() == ctx_name_clean:
+                active_ctx_svc = s
+                break
+
     detected_actions = detect_actions(q_lower)
     detected_info = detect_info_request(q_lower)
 
-    # 4. Map query to service candidate scores
+    if not user_entities and active_ctx_svc:
+        # Check if query is asking for information, action, or referring by pronoun/implicit reference
+        is_follow_up_aspect = bool(detected_info or detected_actions)
+        is_implicit_ref = any(re.search(rf"\b{w}\b", q_lower) for w in ["it", "this", "that", "same", "charges", "cost", "fee", "fees", "paper", "papers", "detail", "details"])
+        # Short query check (e.g. "fees", "how much", "documents needed", "how long", "what next")
+        is_short_prompt = len(q_lower.split()) <= 6
+
+        if is_follow_up_aspect or is_implicit_ref or is_short_prompt:
+            return {
+                "status": "matched",
+                "service": active_ctx_svc,
+                "score": 5.0,
+                "vector_score": 0.5,
+                "detected_actions": detected_actions,
+                "detected_info": detected_info
+            }
+
+    # 5. Map query to service candidate scores
     scored_candidates = []
     
     # Pre-map Chroma results for vector score blending

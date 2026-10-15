@@ -177,5 +177,66 @@ class DynamicServiceMatchingTestSuite(unittest.TestCase):
         self.assertIn("For which official document or service", data.get("answer", ""))
 
 
+    def test_conversational_context_follow_up_and_switching(self):
+        """
+        Verify multi-turn flow:
+        1. Query "passport renew" -> Matches Passport Renewal or Re-issue.
+        2. Follow-up "fees" (with context_service) -> Retains Passport Renewal and answers fees.
+        3. Follow-up "documents" (with context_service) -> Retains Passport Renewal and answers documents.
+        4. New service query "How do I renew driving licence?" -> Cleanly transitions context to Driving Licence Renewal.
+        """
+        # Step 1: Initial query
+        res1 = self.client.post("/api/assistant", json={
+            "question": "passport renew",
+            "language": "English"
+        })
+        self.assertEqual(res1.status_code, 200)
+        data1 = res1.get_json()
+        self.assertTrue(data1.get("success"))
+        self.assertTrue(data1.get("grounded"))
+        self.assertEqual(data1.get("context_service"), "Passport Renewal or Re-issue")
+        active_svc = data1.get("context_service")
+
+        # Step 2: Follow-up "fees"
+        res2 = self.client.post("/api/assistant", json={
+            "question": "fees",
+            "language": "English",
+            "context_service": active_svc
+        })
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.get_json()
+        self.assertTrue(data2.get("success"))
+        self.assertTrue(data2.get("grounded"))
+        self.assertEqual(data2.get("context_service"), "Passport Renewal or Re-issue")
+        self.assertTrue(
+            any(kw in data2.get("answer", "").lower() for kw in ["fee", "1,500", "1500", "rs", "inr", "passport"]),
+            f"Answer was: {data2.get('answer')}"
+        )
+
+        # Step 3: Follow-up "what are the documents required"
+        res3 = self.client.post("/api/assistant", json={
+            "question": "what are the documents required",
+            "language": "English",
+            "context_service": active_svc
+        })
+        self.assertEqual(res3.status_code, 200)
+        data3 = res3.get_json()
+        self.assertTrue(data3.get("success"))
+        self.assertTrue(data3.get("grounded"))
+        self.assertEqual(data3.get("context_service"), "Passport Renewal or Re-issue")
+
+        # Step 4: Context switch to a completely new service
+        res4 = self.client.post("/api/assistant", json={
+            "question": "How do I renew driving licence?",
+            "language": "English",
+            "context_service": active_svc
+        })
+        self.assertEqual(res4.status_code, 200)
+        data4 = res4.get_json()
+        self.assertTrue(data4.get("success"))
+        self.assertTrue(data4.get("grounded"))
+        self.assertEqual(data4.get("context_service"), "Driving Licence Renewal")
+
+
 if __name__ == "__main__":
     unittest.main()

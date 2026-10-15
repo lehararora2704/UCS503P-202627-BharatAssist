@@ -1924,6 +1924,7 @@ def api_assistant_clear():
     """
     Reset conversation context indicator and state.
     """
+    session.pop("active_service", None)
     return jsonify({
         "success": True,
         "message": "Conversation context cleared."
@@ -2116,11 +2117,14 @@ def api_assistant():
         context_texts = []
         answer = None
 
+        req_context_service = data.get("context_service") or session.get("active_service")
+
         all_services = get_all_services()
         match_result = matcher.extract_matched_service_intent(
             query=sanitized_question,
             services_catalog=all_services,
-            chroma_chunks=retrieved_chunks
+            chroma_chunks=retrieved_chunks,
+            context_service=req_context_service
         )
 
         match_status = match_result.get("status")
@@ -2136,6 +2140,7 @@ def api_assistant():
         elif match_status == "matched":
             matched_svc = match_result.get("service")
             context_service = matched_svc.get("name")
+            session["active_service"] = context_service
             is_grounded = True
             
             # Grounded evidence validation
