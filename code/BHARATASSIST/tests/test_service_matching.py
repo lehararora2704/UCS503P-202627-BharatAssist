@@ -79,6 +79,19 @@ class DynamicServiceMatchingTestSuite(unittest.TestCase):
         self.assertEqual(data.get("context_service"), "Passport Appointment or Application Status")
         self.assertTrue(any("passportindia.gov.in" in s.get("source_url", "") for s in data.get("sources", [])))
 
+    def test_passport_address_change(self):
+        """Passport address update -> Maps to Passport Renewal or Re-issue (official Passport Seva re-issue procedure)."""
+        res = self.client.post("/api/assistant", json={
+            "question": "how to change address in passport",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Passport Renewal or Re-issue")
+        self.assertTrue(any("passportindia.gov.in" in s.get("source_url", "") for s in data.get("sources", [])))
+
     def test_pan_card_fresh_application(self):
         """PAN fresh application -> Maps to PAN Card Application."""
         res = self.client.post("/api/assistant", json={

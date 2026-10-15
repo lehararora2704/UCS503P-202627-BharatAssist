@@ -232,10 +232,28 @@ def extract_matched_service_intent(
     # Tokenize query words
     query_tokens = set(re.findall(r"\w+", q_lower))
 
+    # Extract entities present in query
+    user_entities = set()
+    for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
+        if any(re.search(rf"\b{re.escape(syn)}\b", q_lower) for syn in syn_list):
+            user_entities.add(canonical)
+
     for svc in services_catalog:
         name = svc.get("name", "")
         name_lower = name.lower()
         name_tokens = set(re.findall(r"\w+", name_lower))
+
+        # Check entity domains for this service
+        svc_entities = set()
+        for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
+            if any(re.search(rf"\b{re.escape(syn)}\b", name_lower) for syn in syn_list):
+                svc_entities.add(canonical)
+
+        # STRICT ENTITY ISOLATION:
+        # If user explicitly specified a service entity (e.g. 'passport'), do not match services belonging to different entities (e.g. 'driving_licence' or 'vehicle')
+        if user_entities:
+            if svc_entities and user_entities.isdisjoint(svc_entities):
+                continue
 
         score = 0.0
 
@@ -249,20 +267,23 @@ def extract_matched_service_intent(
             significant_overlap = [w for w in overlap if w not in {"and", "or", "for", "the", "in", "of", "to", "card", "service", "registration", "application"}]
             score += len(significant_overlap) * 1.5
 
-        # Check domain synonyms
-        for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
-            user_has_syn = any(re.search(rf"\b{re.escape(syn)}\b", q_lower) for syn in syn_list)
-            svc_has_syn = any(re.search(rf"\b{re.escape(syn)}\b", name_lower) for syn in syn_list)
-            if user_has_syn and svc_has_syn:
-                score += 3.0
+        # Check domain synonyms & entity overlap
+        if user_entities and not user_entities.isdisjoint(svc_entities):
+            score += 6.0
+        else:
+            for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
+                user_has_syn = any(re.search(rf"\b{re.escape(syn)}\b", q_lower) for syn in syn_list)
+                svc_has_syn = any(re.search(rf"\b{re.escape(syn)}\b", name_lower) for syn in syn_list)
+                if user_has_syn and svc_has_syn:
+                    score += 3.0
 
         # Action congruence bonus
-        # If user asked for "update" / "change" / "address", and service name has "Update" or "Change", boost!
+        # If user asked for "update" / "change" / "address", and service name has "Update", "Change", "Re-issue", "Shift", boost!
         if any(act in ["update", "correction"] for act in detected_actions):
-            if any(w in name_lower for w in ["update", "correction", "change", "reprint", "modification"]):
-                score += 2.5
+            if any(w in name_lower for w in ["update", "correction", "change", "reprint", "modification", "re-issue", "reissue", "shift"]):
+                score += 3.0
             elif "application (fresh)" in name_lower or "fresh" in name_lower:
-                score -= 1.5  # Penalize fresh application when user specifically asked for correction/update
+                score -= 2.0  # Penalize fresh application when user specifically asked for correction/update
 
         if "renewal" in detected_actions:
             if "renewal" in name_lower or "re-issue" in name_lower:
@@ -285,6 +306,11 @@ def extract_matched_service_intent(
         if "linking" in detected_actions:
             if "link" in name_lower:
                 score += 3.5
+
+        # Address specific boosting
+        if any(w in q_lower for w in ["address", "residence", "shift", "relocate"]):
+            if any(w in name_lower for w in ["address", "shift"]):
+                score += 3.0
 
         # Blend with Chroma vector score if available
         v_score = chroma_score_map.get(name_lower, 0.0)
