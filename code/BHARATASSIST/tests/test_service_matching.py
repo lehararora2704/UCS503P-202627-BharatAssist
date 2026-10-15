@@ -237,6 +237,35 @@ class DynamicServiceMatchingTestSuite(unittest.TestCase):
         self.assertTrue(data4.get("grounded"))
         self.assertEqual(data4.get("context_service"), "Driving Licence Renewal")
 
+    def test_category_scheme_discovery_farmers(self):
+        """User asks 'which schemes for farmers' -> Returns list of farmer welfare schemes."""
+        res = self.client.post("/api/assistant", json={
+            "question": "which schemes for farmers",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        ans = data.get("answer", "")
+        self.assertIn("Government Schemes & Services for Farmers", ans)
+        self.assertTrue("PM-KISAN" in ans or "Kisan" in ans)
+
+    def test_category_scheme_discovery_employment(self):
+        """User asks 'employment related services' -> Returns list of employment & labour schemes."""
+        res = self.client.post("/api/assistant", json={
+            "question": "what are the schemes for employment",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        ans = data.get("answer", "")
+        self.assertIn("Employment, Skill & Labour Welfare Schemes", ans)
+        self.assertTrue("e-Shram" in ans or "Employment" in ans or "EPFO" in ans)
+
 
 if __name__ == "__main__":
     unittest.main()
+

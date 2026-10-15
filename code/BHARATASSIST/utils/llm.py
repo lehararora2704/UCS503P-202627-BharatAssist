@@ -447,7 +447,8 @@ def generate_assistant_response(
     question: str,
     context_chunks: list = None,
     language: str = "English",
-    citizen_name: str = None
+    citizen_name: str = None,
+    aspect_only: str = None
 ) -> str:
     """
     Unified, intelligent conversational assistant engine.
@@ -458,7 +459,9 @@ def generate_assistant_response(
         NEVER answers out-of-database queries from Gemini general knowledge.
     - If context_chunks is provided:
       * Answers strictly using verified database context.
-      * Strictly forbids hallucinating out-of-database services or general knowledge.
+      * If aspect_only is specified (e.g., 'fees', 'documents', 'processing_time', 'eligibility'),
+        provides a direct, concise response focusing strictly on that requested detail
+        without repeating full service overview or all other sections.
     """
     lang_key = language if language in LANGUAGE_SPECS else "English"
     spec = LANGUAGE_SPECS[lang_key]
@@ -527,6 +530,20 @@ Answer in {lang_key}:"""
 
     sections_formatted = "\n".join([f"     * {s}" for s in spec["sections"]])
 
+    if aspect_only:
+        pattern_instruction = f"""2. CONCISE SINGLE-ASPECT ANSWER (CRITICAL):
+   - The citizen is asking specifically about: **{aspect_only.upper()}**.
+   - Answer directly and concisely with ONLY the requested {aspect_only} information from the verified context.
+   - DO NOT repeat the entire service description, full step-by-step procedure, or unrelated sections.
+   - Keep the answer focused, clear, and easy to read (1-3 sentences or a concise bullet list).
+"""
+    else:
+        pattern_instruction = f"""2. Structured Answer Pattern (When Context Answers the Question):
+   - Organize your response clearly in structured sections:
+{sections_formatted}
+   - Use bold labels for key details so citizens can scan quickly.
+"""
+
     prompt_instructions = f"""You are BharatAssist, an intelligent, warm, polite, and practical AI Civic Assistant for Indian citizens.
 
 Core Guidelines:
@@ -539,11 +556,7 @@ Core Guidelines:
      Instead, reply ONLY with this exact sentence:
      "{spec['not_found_msg']}"
 
-2. Structured Answer Pattern (When Context Answers the Question):
-   - Organize your response clearly in structured sections:
-{sections_formatted}
-   - Use bold labels for key details so citizens can scan quickly.
-
+{pattern_instruction}
 3. Language Directives:
    - Selected Language: {lang_key}
    - {spec['directive']}

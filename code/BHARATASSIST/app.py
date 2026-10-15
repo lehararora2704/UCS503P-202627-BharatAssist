@@ -2137,6 +2137,38 @@ def api_assistant():
             is_grounded = False
             answer = match_result.get("message")
 
+        elif match_status == "category_discovery":
+            cat_services = match_result.get("services", [])
+            cat_title = match_result.get("category_title", "Government Schemes")
+            cat_desc = match_result.get("category_description", "Available government schemes and services:")
+            is_grounded = True
+            best_score = 0.95
+
+            # Populate sources from category services
+            for cs in cat_services[:5]:
+                cs_url = normalize_url(cs.get("source_url"))
+                if cs_url:
+                    sources.append({
+                        "name": cs.get("name") or "Official Portal",
+                        "source_url": cs_url
+                    })
+
+            # Format grounded categorized response
+            bullet_items = []
+            for idx, cs in enumerate(cat_services[:8], 1):
+                name = cs.get("name", "Service")
+                fees = cs.get("fees", "As specified on portal")
+                url = normalize_url(cs.get("source_url")) or "https://www.india.gov.in"
+                bullet_items.append(f"{idx}. **{name}** — Fees: {fees} ([Official Portal]({url}))")
+
+            summary_list = "\n".join(bullet_items)
+            answer = (
+                f"### 🏛️ {cat_title}\n\n"
+                f"{cat_desc}\n\n"
+                f"{summary_list}\n\n"
+                f"💡 *You can ask me specific details (e.g. fees, documents, or steps) about any of these services.*"
+            )
+
         elif match_status == "matched":
             matched_svc = match_result.get("service")
             context_service = matched_svc.get("name")
@@ -2196,7 +2228,8 @@ def api_assistant():
                     question=sanitized_question,
                     context_chunks=context_texts,
                     language=language,
-                    citizen_name=citizen_name
+                    citizen_name=citizen_name,
+                    aspect_only=match_result.get("aspect_only")
                 )
             elif llm.is_conversational_greeting(sanitized_question):
                 answer = llm.get_greeting_response(

@@ -181,6 +181,137 @@ def detect_info_request(text: str) -> List[str]:
     return detected
 
 
+CATEGORY_SCHEME_GROUPS = {
+    "farmer": {
+        "keywords": ["farmer", "farmers", "kisan", "agriculture", "krishi", "fasal", "crop", "cultivator", "farming", "crop insurance"],
+        "title": "Government Schemes & Services for Farmers",
+        "description": "Key government services and welfare schemes available for farmers:"
+    },
+    "employment": {
+        "keywords": ["employment", "job", "jobs", "career", "recruitment", "apprentice", "apprenticeship", "shram", "labour", "worker", "epfo", "esic", "unemployed", "rojgar", "workforce"],
+        "title": "Employment, Skill & Labour Welfare Schemes",
+        "description": "Key employment, career, training, and social security services:"
+    },
+    "health": {
+        "keywords": ["health", "medical", "hospital", "treatment", "ayushman", "pmjay", "cghs", "jan aushadhi", "abha", "health insurance", "medicine"],
+        "title": "Healthcare & Medical Welfare Schemes",
+        "description": "Key public healthcare, insurance, and medical assistance schemes:"
+    },
+    "pension": {
+        "keywords": ["pension", "pensioners", "senior citizen", "old age", "social security", "atal pension", "jeevan pramaan", "shram yogi", "widow pension"],
+        "title": "Pension & Social Security Schemes",
+        "description": "Key national and state pension and social welfare schemes:"
+    },
+    "education": {
+        "keywords": ["education", "scholarship", "scholarships", "student", "students", "fellowship", "cbse", "ugc", "academic bank", "higher education", "study"],
+        "title": "Education & Scholarship Schemes",
+        "description": "Key education, examination, and scholarship portals:"
+    },
+    "business": {
+        "keywords": ["business", "startup", "startups", "msme", "udyam", "company", "trade licence", "gst registration", "fssai", "gem", "patent", "trademark"],
+        "title": "Business, MSME & Startup Services",
+        "description": "Key portals for business registration, licensing, and trade:"
+    },
+    "housing": {
+        "keywords": ["housing", "pmay", "awas", "house", "rooftop solar", "solar rooftop", "shelter"],
+        "title": "Housing & Energy Welfare Schemes",
+        "description": "Key public housing and clean energy schemes:"
+    },
+    "women": {
+        "keywords": ["women", "woman", "child welfare", "maternity", "anganwadi", "women commission", "girl child", "female"],
+        "title": "Women & Child Welfare Schemes",
+        "description": "Key welfare schemes and grievance redressal for women and children:"
+    }
+}
+
+
+def is_category_scheme_discovery(text: str) -> Optional[str]:
+    """
+    Detect if the user is asking broadly for schemes/services available in a domain
+    (e.g., 'which schemes for farmers', 'employment related services', 'schemes for students',
+    'what health schemes are available').
+    """
+    q = text.lower().strip()
+    discovery_triggers = [
+        "which scheme", "which schemes", "what scheme", "what schemes",
+        "schemes for", "scheme for", "services for", "service for",
+        "schemes available", "services available", "list of schemes",
+        "list of services", "related services", "related schemes",
+        "welfare scheme", "welfare schemes", "government schemes",
+        "government services", "available for", "options for"
+    ]
+
+    has_discovery_trigger = any(dt in q for dt in discovery_triggers)
+    # Also support very short queries like "for farmers", "farmer schemes", "employment schemes"
+    words = q.split()
+    is_short = len(words) <= 5
+
+    for cat_id, cfg in CATEGORY_SCHEME_GROUPS.items():
+        has_cat_kw = any(re.search(rf"\b{re.escape(k)}\b", q) for k in cfg["keywords"])
+        if has_cat_kw:
+            if has_discovery_trigger:
+                return cat_id
+            if is_short and any(w in q for w in ["scheme", "schemes", "service", "services", "for", "related"]):
+                return cat_id
+
+    return None
+
+
+def get_category_services(cat_id: str, services_catalog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Retrieve services in catalog matching the category definition."""
+    cfg = CATEGORY_SCHEME_GROUPS.get(cat_id)
+    if not cfg:
+        return []
+    keywords = cfg["keywords"]
+    matched = []
+    seen = set()
+    for s in services_catalog:
+        name = s.get("name", "")
+        if name in seen:
+            continue
+        # Filter false positives
+        if cat_id == "health" and name == "Soil Health Card":
+            continue
+        name_cat = (name + " " + (s.get("category") or "")).lower()
+        if any(k in name_cat for k in keywords):
+            seen.add(name)
+            matched.append(s)
+    return matched
+
+
+def is_aspect_only_follow_up(query: str, detected_info: List[str]) -> Optional[str]:
+    """
+    Check if query is asking strictly for a specific aspect (e.g. 'fees', 'cost',
+    'how much', 'documents', 'what are the documents') without asking for full steps.
+    """
+    q_clean = re.sub(r"[^\w\s]", "", query.lower()).strip()
+    words = q_clean.split()
+    if len(words) > 6:
+        return None
+
+    if "fees" in detected_info:
+        fee_words = ["fee", "fees", "cost", "charges", "charge", "price", "how much", "rate", "payment"]
+        if any(w in q_clean for w in fee_words) and not any(w in q_clean for w in ["apply", "procedure", "steps", "how to"]):
+            return "fees"
+
+    if "documents" in detected_info:
+        doc_words = ["document", "documents", "docs", "proof", "proofs", "paperwork"]
+        if any(w in q_clean for w in doc_words) and not any(w in q_clean for w in ["apply", "procedure", "steps", "how to"]):
+            return "documents"
+
+    if "processing_time" in detected_info:
+        time_words = ["time", "processing time", "duration", "how long", "timeline", "days"]
+        if any(w in q_clean for w in time_words) and not any(w in q_clean for w in ["apply", "procedure", "steps"]):
+            return "processing_time"
+
+    if "eligibility" in detected_info:
+        elig_words = ["eligible", "eligibility", "who can apply", "age limit", "criteria"]
+        if any(w in q_clean for w in elig_words) and not any(w in q_clean for w in ["apply", "procedure", "steps"]):
+            return "eligibility"
+
+    return None
+
+
 def extract_matched_service_intent(
     query: str,
     services_catalog: List[Dict[str, Any]],
@@ -195,7 +326,9 @@ def extract_matched_service_intent(
     4. Conversational context awareness: seamlessly retains active service context
        for follow-up questions (fees, documents, eligibility, steps, processing time)
        while switching cleanly when a new service is explicitly queried.
-    5. Guardrails for unsupported / out-of-scope / ambiguous queries.
+    5. Category & Scheme Discovery: handles domain-wide inquiries (farmers, employment,
+       health, pension, education, women, business) by aggregating matching services.
+    6. Guardrails for unsupported / out-of-scope / ambiguous queries.
     """
     clean_query = query.strip()
     q_lower = clean_query.lower()
@@ -221,13 +354,29 @@ def extract_matched_service_intent(
             "message": clarification_msg
         }
 
-    # 3. Extract entities present in query
+    # 3. Check domain scheme discovery (e.g., 'which schemes for farmers', 'employment related services')
+    cat_discovery = is_category_scheme_discovery(q_lower)
+    if cat_discovery:
+        cat_services = get_category_services(cat_discovery, services_catalog)
+        if cat_services:
+            cfg = CATEGORY_SCHEME_GROUPS[cat_discovery]
+            return {
+                "status": "category_discovery",
+                "category_id": cat_discovery,
+                "category_title": cfg["title"],
+                "category_description": cfg["description"],
+                "services": cat_services,
+                "score": 5.0,
+                "vector_score": 0.5
+            }
+
+    # 4. Extract entities present in query
     user_entities = set()
     for canonical, syn_list in CORE_SERVICE_SYNONYMS.items():
         if any(re.search(rf"\b{re.escape(syn)}\b", q_lower) for syn in syn_list):
             user_entities.add(canonical)
 
-    # 4. Conversational follow-up resolution:
+    # 5. Conversational follow-up resolution:
     # If no new entity is introduced and an active context_service is present,
     # check if this is a follow-up inquiry (e.g., fees, docs, steps, eligibility, time)
     # or general inquiry referring back to the current context.
@@ -250,16 +399,18 @@ def extract_matched_service_intent(
         is_short_prompt = len(q_lower.split()) <= 6
 
         if is_follow_up_aspect or is_implicit_ref or is_short_prompt:
+            aspect_only = is_aspect_only_follow_up(q_lower, detected_info)
             return {
                 "status": "matched",
                 "service": active_ctx_svc,
                 "score": 5.0,
                 "vector_score": 0.5,
                 "detected_actions": detected_actions,
-                "detected_info": detected_info
+                "detected_info": detected_info,
+                "aspect_only": aspect_only
             }
 
-    # 5. Map query to service candidate scores
+    # 6. Map query to service candidate scores
     scored_candidates = []
     
     # Pre-map Chroma results for vector score blending
