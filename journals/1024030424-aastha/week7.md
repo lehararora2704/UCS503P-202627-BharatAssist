@@ -1,9 +1,5 @@
 # BharatAssist — Weekly Project Progress Report
-## Individual Contribution: Citizen Profile & Account Management
 
-**Project:** BharatAssist — Citizen Services Assistant  
-**Contributor:** Lehar  
-**Reporting Period:** This Week
 
 ### 1. Overview
 
