@@ -37,7 +37,7 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 
 def init_users_table():
-    """Initialize local SQLite tables for citizen authentication (with password & OTP) and persistent chat history."""
+    """Initialize local SQLite tables for citizen authentication (with password & OTP), profile details, applications, step progress, and conversation threads."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -50,8 +50,17 @@ def init_users_table():
                     # Upgrade schema from older prototype to mobile OTP
                     conn.execute("DROP TABLE users")
                     table_exists = False
-                elif "password_hash" not in columns:
-                    conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+                else:
+                    if "password_hash" not in columns:
+                        conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+                    if "email" not in columns:
+                        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+                    if "preferred_language" not in columns:
+                        conn.execute("ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'English'")
+                    if "state" not in columns:
+                        conn.execute("ALTER TABLE users ADD COLUMN state TEXT")
+                    if "district" not in columns:
+                        conn.execute("ALTER TABLE users ADD COLUMN district TEXT")
 
             if not table_exists:
                 conn.execute("""
@@ -59,7 +68,11 @@ def init_users_table():
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         phone TEXT UNIQUE NOT NULL,
                         name TEXT NOT NULL,
+                        email TEXT,
                         password_hash TEXT,
+                        preferred_language TEXT DEFAULT 'English',
+                        state TEXT,
+                        district TEXT,
                         otp TEXT,
                         otp_expiry TIMESTAMP,
                         is_verified INTEGER DEFAULT 0,
@@ -68,10 +81,57 @@ def init_users_table():
                     )
                 """)
 
+            # Saved Checklists / Applications Table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    service_id INTEGER NOT NULL,
+                    status TEXT DEFAULT 'Not started',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, service_id)
+                )
+            """)
+
+            # Step-level progress tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_step_progress (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    application_id INTEGER NOT NULL,
+                    item_id TEXT NOT NULL,
+                    item_type TEXT NOT NULL,
+                    completed INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(application_id, item_id)
+                )
+            """)
+
+            # Chat Conversations table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS chat_conversations (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    user_phone TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Persistent Chat History table for citizens
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_history'")
+            chat_hist_exists = cursor.fetchone()
+            if chat_hist_exists:
+                cursor.execute("PRAGMA table_info(chat_history)")
+                hist_cols = [row[1] for row in cursor.fetchall()]
+                if "conversation_id" not in hist_cols:
+                    conn.execute("ALTER TABLE chat_history ADD COLUMN conversation_id TEXT")
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS chat_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id TEXT,
                     user_id INTEGER,
                     user_phone TEXT NOT NULL,
                     question TEXT NOT NULL,
@@ -1070,6 +1130,732 @@ def logout():
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
         return redirect(next_url)
     return redirect(url_for("login"))
+
+
+# ============================================================
+# CITIZEN USER PROFILE & ACCOUNT MANAGEMENT
+# ============================================================
+
+def get_current_user_record():
+    """Helper to fetch full up-to-date user record from database."""
+    session_user = session.get("user")
+    if not session_user or not session_user.get("id"):
+        return None
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, phone, name, email, preferred_language, state, district,
+                       password_hash, is_verified, created_at, last_login
+                FROM users WHERE id = ?
+            """, (session_user["id"],))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+    except Exception as e:
+        print("get_current_user_record error:", repr(e))
+    return None
+
+
+@app.route("/profile")
+def profile():
+    """Citizen Profile details and account management page."""
+    user = get_current_user_record()
+    if not user:
+        return redirect(url_for("login", next="/profile"))
+    
+    masked_phone = mask_phone_number(user.get("phone", ""))
+    return render_template("profile.html", user=user, masked_phone=masked_phone)
+
+
+@app.route("/api/profile/update", methods=["POST"])
+def api_profile_update():
+    """Update profile details: name, email, preferred_language, state, district, optional phone."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name") or "").strip()
+        email = str(data.get("email") or "").strip()
+        preferred_language = str(data.get("preferred_language") or "English").strip()
+        state = str(data.get("state") or "").strip()
+        district = str(data.get("district") or "").strip()
+        phone_raw = str(data.get("phone") or "").strip()
+
+        # Validation
+        if not name or len(name) < 2:
+            return jsonify({"success": False, "error": "Full Name is required (minimum 2 characters)."}), 400
+
+        if email:
+            email_regex = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+            if not re.match(email_regex, email):
+                return jsonify({"success": False, "error": "Please enter a valid email address."}), 400
+
+        # Optional phone validation: if supplied and changed, validate format
+        new_phone = user["phone"]
+        if phone_raw:
+            normalized_p = normalize_indian_phone(phone_raw)
+            if not normalized_p:
+                return jsonify({"success": False, "error": "Please enter a valid 10-digit Indian mobile number."}), 400
+            new_phone = normalized_p
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            # If phone changed, check uniqueness
+            if new_phone != user["phone"]:
+                cursor.execute("SELECT id FROM users WHERE phone = ? AND id != ?", (new_phone, user["id"]))
+                if cursor.fetchone():
+                    return jsonify({"success": False, "error": "This mobile number is already registered to another account."}), 400
+
+            cursor.execute("""
+                UPDATE users
+                SET name = ?,
+                    email = ?,
+                    phone = ?,
+                    preferred_language = ?,
+                    state = ?,
+                    district = ?
+                WHERE id = ?
+            """, (name, email or None, new_phone, preferred_language, state or None, district or None, user["id"]))
+            conn.commit()
+
+        # Refresh session
+        session_user = session.get("user", {})
+        session_user["name"] = name
+        session_user["phone"] = new_phone
+        session_user["masked_phone"] = mask_phone_number(new_phone)
+        session["user"] = session_user
+
+        return jsonify({
+            "success": True,
+            "message": "Profile updated successfully.",
+            "user": {
+                "name": name,
+                "email": email,
+                "phone": new_phone,
+                "preferred_language": preferred_language,
+                "state": state,
+                "district": district
+            }
+        })
+    except Exception as e:
+        print("Profile update error:", repr(e))
+        return jsonify({"success": False, "error": f"Failed to update profile: {str(e)}"}), 500
+
+
+@app.route("/api/profile/change-password", methods=["POST"])
+def api_profile_change_password():
+    """Change citizen account password."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        current_password = str(data.get("current_password") or "")
+        new_password = str(data.get("new_password") or "")
+        confirm_password = str(data.get("confirm_password") or "")
+
+        if user.get("password_hash"):
+            if not current_password:
+                return jsonify({"success": False, "error": "Current password is required."}), 400
+            if not check_password_hash(user["password_hash"], current_password):
+                return jsonify({"success": False, "error": "Incorrect current password."}), 400
+
+        if not new_password or len(new_password) < 6:
+            return jsonify({"success": False, "error": "New password must be at least 6 characters long."}), 400
+
+        if new_password != confirm_password:
+            return jsonify({"success": False, "error": "New passwords do not match."}), 400
+
+        new_hash = generate_password_hash(new_password)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user["id"]))
+            conn.commit()
+
+        return jsonify({"success": True, "message": "Password changed successfully."})
+    except Exception as e:
+        print("Change password error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/profile/delete-account", methods=["POST"])
+def api_profile_delete_account():
+    """
+    Permanently delete account:
+    Removes user, saved applications, step progress, and chat history.
+    Requires confirmation text 'DELETE' or valid password confirmation.
+    """
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        confirm_text = str(data.get("confirm_text") or "").strip()
+        password = str(data.get("password") or "").strip()
+
+        # Check confirmation: Either typed 'DELETE' or provided correct password
+        is_confirmed = False
+        if confirm_text == "DELETE":
+            is_confirmed = True
+        elif password and user.get("password_hash") and check_password_hash(user["password_hash"], password):
+            is_confirmed = True
+
+        if not is_confirmed:
+            return jsonify({
+                "success": False,
+                "error": "Confirmation failed. Please type 'DELETE' or enter your correct password."
+            }), 400
+
+        user_id = user["id"]
+        phone = user["phone"]
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            # 1. Get all application IDs to delete step progress
+            cursor.execute("SELECT id FROM user_applications WHERE user_id = ?", (user_id,))
+            app_ids = [r[0] for r in cursor.fetchall()]
+
+            if app_ids:
+                placeholders = ",".join("?" for _ in app_ids)
+                cursor.execute(f"DELETE FROM user_step_progress WHERE application_id IN ({placeholders})", app_ids)
+
+            # 2. Delete applications
+            cursor.execute("DELETE FROM user_applications WHERE user_id = ?", (user_id,))
+
+            # 3. Delete conversations and chat history
+            cursor.execute("DELETE FROM chat_conversations WHERE user_id = ? OR user_phone = ?", (user_id, phone))
+            cursor.execute("DELETE FROM chat_history WHERE user_id = ? OR user_phone = ?", (user_id, phone))
+
+            # 4. Delete user record
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+
+        # 5. Clear session completely
+        session.clear()
+
+        return jsonify({
+            "success": True,
+            "message": "Your account and all associated data have been permanently deleted."
+        })
+    except Exception as e:
+        print("Delete account error:", repr(e))
+        return jsonify({"success": False, "error": f"Failed to delete account: {str(e)}"}), 500
+
+
+# ============================================================
+# MY APPLICATIONS & CHECKLIST PROGRESS
+# ============================================================
+
+def build_service_checklist_items(service):
+    """
+    Generate stable items for documents and steps with stable IDs.
+    Returns list of items: [{'id': 'doc_0', 'type': 'document', 'title': '...'}, ...]
+    """
+    items = []
+    if not service:
+        return items
+
+    documents = service.get("documents") or []
+    for idx, doc in enumerate(documents):
+        items.append({
+            "id": f"doc_{idx}",
+            "type": "document",
+            "title": doc
+        })
+
+    steps = service.get("steps") or service.get("steps_list") or []
+    for idx, step in enumerate(steps):
+        items.append({
+            "id": f"step_{idx}",
+            "type": "step",
+            "title": step
+        })
+
+    return items
+
+
+@app.route("/applications")
+def my_applications():
+    """Citizen's 'My Applications' list view with progress and status badges."""
+    user = get_current_user_record()
+    if not user:
+        return redirect(url_for("login", next="/applications"))
+
+    applications = []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ua.id, ua.user_id, ua.service_id, ua.status, ua.created_at, ua.updated_at,
+                       s.name AS service_name, s.category, s.state AS service_state, s.processing_time,
+                       s.documents_required, s.steps
+                FROM user_applications ua
+                JOIN services s ON ua.service_id = s.id
+                WHERE ua.user_id = ?
+                ORDER BY ua.updated_at DESC
+            """, (user["id"],))
+            rows = cursor.fetchall()
+
+            for r in rows:
+                app_dict = dict(r)
+                # Compute checklist items
+                svc = {
+                    "documents": split_database_text(app_dict.get("documents_required")),
+                    "steps": split_steps(app_dict.get("steps"))
+                }
+                checklist_items = build_service_checklist_items(svc)
+                total_items = len(checklist_items)
+
+                # Fetch checked items
+                cursor.execute("""
+                    SELECT item_id FROM user_step_progress
+                    WHERE application_id = ? AND completed = 1
+                """, (app_dict["id"],))
+                completed_items = {row[0] for row in cursor.fetchall()}
+                done_count = sum(1 for item in checklist_items if item["id"] in completed_items)
+                progress_pct = int((done_count / total_items * 100)) if total_items > 0 else 0
+
+                app_dict["total_items"] = total_items
+                app_dict["done_count"] = done_count
+                app_dict["progress_pct"] = progress_pct
+                applications.append(app_dict)
+    except Exception as e:
+        print("My applications load error:", repr(e))
+
+    return render_template("applications.html", applications=applications, user=user)
+
+
+@app.route("/applications/<int:app_id>")
+def application_checklist(app_id):
+    """Interactive checklist page for a specific saved application."""
+    user = get_current_user_record()
+    if not user:
+        return redirect(url_for("login", next=f"/applications/{app_id}"))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ua.id, ua.user_id, ua.service_id, ua.status, ua.created_at, ua.updated_at,
+                   s.name AS service_name, s.category, s.state AS service_state, s.processing_time,
+                   s.fees, s.source_url, s.eligibility, s.documents_required, s.steps
+            FROM user_applications ua
+            JOIN services s ON ua.service_id = s.id
+            WHERE ua.id = ? AND ua.user_id = ?
+        """, (app_id, user["id"]))
+        row = cursor.fetchone()
+
+        if not row:
+            return render_template("application_checklist.html", error="Application not found or access denied.", application=None)
+
+        application = dict(row)
+        svc = {
+            "documents": split_database_text(application.get("documents_required")),
+            "steps": split_steps(application.get("steps"))
+        }
+        application["documents_list"] = svc["documents"]
+        application["steps_list"] = svc["steps"]
+
+        # Fetch progress
+        cursor.execute("""
+            SELECT item_id, completed FROM user_step_progress
+            WHERE application_id = ?
+        """, (app_id,))
+        progress_map = {r[0]: bool(r[1]) for r in cursor.fetchall()}
+
+        checklist_items = build_service_checklist_items(svc)
+        total_items = len(checklist_items)
+        done_count = sum(1 for item in checklist_items if progress_map.get(item["id"]))
+        progress_pct = int((done_count / total_items * 100)) if total_items > 0 else 0
+
+        application["total_items"] = total_items
+        application["done_count"] = done_count
+        application["progress_pct"] = progress_pct
+        application["progress_map"] = progress_map
+
+    return render_template("application_checklist.html", application=application, user=user)
+
+
+@app.route("/api/applications/save", methods=["POST"])
+def api_applications_save():
+    """Save a service checklist to the user's account."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Please sign in to save this application checklist."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        service_id = data.get("service_id")
+        if not service_id:
+            return jsonify({"success": False, "error": "Missing service_id parameter."}), 400
+
+        service = get_service_by_id(service_id)
+        if not service:
+            return jsonify({"success": False, "error": "Service not found in catalog."}), 404
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, status FROM user_applications
+                WHERE user_id = ? AND service_id = ?
+            """, (user["id"], service_id))
+            existing = cursor.fetchone()
+
+            if existing:
+                app_id = existing[0]
+                status = existing[1]
+                message = f"'{service['name']}' is already in your applications."
+            else:
+                cursor.execute("""
+                    INSERT INTO user_applications (user_id, service_id, status, created_at, updated_at)
+                    VALUES (?, ?, 'Not started', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, (user["id"], service_id))
+                app_id = cursor.lastrowid
+                status = 'Not started'
+                message = f"'{service['name']}' added to your applications!"
+                conn.commit()
+
+        return jsonify({
+            "success": True,
+            "message": message,
+            "application_id": app_id,
+            "service_name": service["name"],
+            "status": status
+        })
+    except Exception as e:
+        print("Save application error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/applications/<int:app_id>/status", methods=["POST"])
+def api_applications_update_status(app_id):
+    """Update status of a saved application (Not started / In progress / Submitted)."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        status = str(data.get("status") or "").strip()
+        allowed = {"Not started", "In progress", "Submitted"}
+        if status not in allowed:
+            return jsonify({"success": False, "error": f"Invalid status. Allowed: {', '.join(allowed)}"}), 400
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE user_applications
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+            """, (status, app_id, user["id"]))
+            if cursor.rowcount == 0:
+                return jsonify({"success": False, "error": "Application not found or unauthorized."}), 404
+            conn.commit()
+
+        return jsonify({"success": True, "status": status, "message": f"Status updated to '{status}'."})
+    except Exception as e:
+        print("Update app status error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/applications/<int:app_id>", methods=["DELETE"])
+def api_applications_delete(app_id):
+    """Delete a saved application and its step progress."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            # Verify ownership
+            cursor.execute("SELECT id FROM user_applications WHERE id = ? AND user_id = ?", (app_id, user["id"]))
+            if not cursor.fetchone():
+                return jsonify({"success": False, "error": "Application not found or unauthorized."}), 404
+
+            cursor.execute("DELETE FROM user_step_progress WHERE application_id = ?", (app_id,))
+            cursor.execute("DELETE FROM user_applications WHERE id = ?", (app_id,))
+            conn.commit()
+
+        return jsonify({"success": True, "message": "Application removed successfully."})
+    except Exception as e:
+        print("Delete application error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/applications/<int:app_id>/toggle-step", methods=["POST"])
+def api_applications_toggle_step(app_id):
+    """Toggle a document or step checkbox and recalculate progress."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        data = request.get_json(silent=True) or {}
+        item_id = str(data.get("item_id") or "").strip()
+        item_type = str(data.get("item_type") or "step").strip()
+        completed = 1 if data.get("completed") else 0
+
+        if not item_id:
+            return jsonify({"success": False, "error": "Missing item_id."}), 400
+
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ua.id, ua.service_id, ua.status, s.documents_required, s.steps
+                FROM user_applications ua
+                JOIN services s ON ua.service_id = s.id
+                WHERE ua.id = ? AND ua.user_id = ?
+            """, (app_id, user["id"]))
+            app_row = cursor.fetchone()
+            if not app_row:
+                return jsonify({"success": False, "error": "Application not found or unauthorized."}), 404
+
+            # Upsert step progress
+            cursor.execute("""
+                INSERT INTO user_step_progress (application_id, item_id, item_type, completed, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(application_id, item_id) DO UPDATE SET
+                    completed = excluded.completed,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (app_id, item_id, item_type, completed))
+
+            # Auto advance status from 'Not started' to 'In progress' if completing a step
+            current_status = app_row["status"]
+            if completed == 1 and current_status == "Not started":
+                cursor.execute("""
+                    UPDATE user_applications
+                    SET status = 'In progress', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (app_id,))
+                current_status = "In progress"
+            else:
+                cursor.execute("""
+                    UPDATE user_applications
+                    SET updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (app_id,))
+
+            # Compute new total and done count
+            svc = {
+                "documents": split_database_text(app_row["documents_required"]),
+                "steps": split_steps(app_row["steps"])
+            }
+            checklist_items = build_service_checklist_items(svc)
+            total_items = len(checklist_items)
+
+            cursor.execute("""
+                SELECT item_id FROM user_step_progress
+                WHERE application_id = ? AND completed = 1
+            """, (app_id,))
+            done_set = {r[0] for r in cursor.fetchall()}
+            done_count = sum(1 for item in checklist_items if item["id"] in done_set)
+            progress_pct = int((done_count / total_items * 100)) if total_items > 0 else 0
+            all_done = (done_count == total_items) and (total_items > 0)
+
+            conn.commit()
+
+        return jsonify({
+            "success": True,
+            "item_id": item_id,
+            "completed": bool(completed),
+            "done_count": done_count,
+            "total_items": total_items,
+            "progress_pct": progress_pct,
+            "all_done": all_done,
+            "current_status": current_status
+        })
+    except Exception as e:
+        print("Toggle step error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================
+# CHAT CONVERSATIONS & HISTORY THREADS
+# ============================================================
+
+@app.route("/chat-history")
+def chat_history_page():
+    """Citizen Chat History page listing past conversation threads."""
+    user = get_current_user_record()
+    if not user:
+        return redirect(url_for("login", next="/chat-history"))
+
+    threads = []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # Fetch structured conversations
+            cursor.execute("""
+                SELECT c.id, c.title, c.created_at, c.updated_at,
+                       COUNT(h.id) AS message_count
+                FROM chat_conversations c
+                LEFT JOIN chat_history h ON c.id = h.conversation_id
+                WHERE c.user_id = ? OR c.user_phone = ?
+                GROUP BY c.id
+                ORDER BY c.updated_at DESC
+            """, (user["id"], user["phone"]))
+            rows = cursor.fetchall()
+
+            for r in rows:
+                threads.append(dict(r))
+
+            # Backward-compatibility: Check if there are legacy turns without conversation_id
+            cursor.execute("""
+                SELECT COUNT(*) FROM chat_history
+                WHERE (user_id = ? OR user_phone = ?) AND (conversation_id IS NULL OR conversation_id = '')
+            """, (user["id"], user["phone"]))
+            legacy_count = cursor.fetchone()[0]
+            if legacy_count > 0:
+                # Group legacy turns into a default legacy thread
+                threads.append({
+                    "id": "legacy_thread",
+                    "title": "Earlier Conversations",
+                    "created_at": "Earlier",
+                    "updated_at": "Earlier",
+                    "message_count": legacy_count
+                })
+    except Exception as e:
+        print("Chat history page error:", repr(e))
+
+    return render_template("chat_history.html", threads=threads, user=user)
+
+
+@app.route("/api/conversations", methods=["GET"])
+def api_conversations_list():
+    """List conversation threads for logged-in citizen."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": True, "authenticated": False, "conversations": []})
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.id, c.title, c.created_at, c.updated_at,
+                       COUNT(h.id) AS message_count
+                FROM chat_conversations c
+                LEFT JOIN chat_history h ON c.id = h.conversation_id
+                WHERE c.user_id = ? OR c.user_phone = ?
+                GROUP BY c.id
+                ORDER BY c.updated_at DESC
+            """, (user["id"], user["phone"]))
+            rows = cursor.fetchall()
+            conversations = [dict(r) for r in rows]
+
+        return jsonify({
+            "success": True,
+            "authenticated": True,
+            "conversations": conversations
+        })
+    except Exception as e:
+        print("Conversations list error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/conversations/<conversation_id>", methods=["GET"])
+def api_conversation_detail(conversation_id):
+    """Retrieve all turns of a conversation thread."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if conversation_id == "legacy_thread":
+                cursor.execute("""
+                    SELECT id, question, answer, language, sources_json, created_at
+                    FROM chat_history
+                    WHERE (user_id = ? OR user_phone = ?) AND (conversation_id IS NULL OR conversation_id = '')
+                    ORDER BY id ASC
+                """, (user["id"], user["phone"]))
+                title = "Earlier Conversations"
+            else:
+                cursor.execute("""
+                    SELECT id, title, created_at, updated_at FROM chat_conversations
+                    WHERE id = ? AND (user_id = ? OR user_phone = ?)
+                """, (conversation_id, user["id"], user["phone"]))
+                conv = cursor.fetchone()
+                if not conv:
+                    return jsonify({"success": False, "error": "Conversation not found."}), 404
+                title = conv["title"]
+
+                cursor.execute("""
+                    SELECT id, question, answer, language, sources_json, created_at
+                    FROM chat_history
+                    WHERE conversation_id = ?
+                    ORDER BY id ASC
+                """, (conversation_id,))
+
+            rows = cursor.fetchall()
+            messages = []
+            for r in rows:
+                sources = []
+                if r["sources_json"]:
+                    try:
+                        sources = json.loads(r["sources_json"])
+                    except Exception:
+                        sources = []
+                messages.append({
+                    "id": r["id"],
+                    "question": r["question"],
+                    "answer": r["answer"],
+                    "language": r["language"],
+                    "sources": sources,
+                    "created_at": r["created_at"]
+                })
+
+        return jsonify({
+            "success": True,
+            "conversation_id": conversation_id,
+            "title": title,
+            "messages": messages
+        })
+    except Exception as e:
+        print("Conversation detail error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/conversations/<conversation_id>", methods=["DELETE"])
+def api_conversation_delete(conversation_id):
+    """Delete a conversation thread and its messages."""
+    user = get_current_user_record()
+    if not user:
+        return jsonify({"success": False, "error": "Authentication required."}), 401
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            if conversation_id == "legacy_thread":
+                cursor.execute("""
+                    DELETE FROM chat_history
+                    WHERE (user_id = ? OR user_phone = ?) AND (conversation_id IS NULL OR conversation_id = '')
+                """, (user["id"], user["phone"]))
+            else:
+                cursor.execute("""
+                    DELETE FROM chat_history WHERE conversation_id = ?
+                """, (conversation_id,))
+                cursor.execute("""
+                    DELETE FROM chat_conversations WHERE id = ? AND (user_id = ? OR user_phone = ?)
+                """, (conversation_id, user["id"], user["phone"]))
+            conn.commit()
+
+        return jsonify({"success": True, "message": "Conversation thread deleted."})
+    except Exception as e:
+        print("Delete conversation error:", repr(e))
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/auth/register-send-otp", methods=["POST"])
@@ -2242,13 +3028,31 @@ def api_assistant():
         # ----------------------------------------------------
         # 5. Persist Chat History for Logged-In Citizen
         # ----------------------------------------------------
+        conversation_id = data.get("conversation_id")
         if current_user and current_user.get("phone"):
             try:
                 with sqlite3.connect(DB_PATH) as conn:
-                    conn.execute("""
-                        INSERT INTO chat_history (user_id, user_phone, question, answer, language, sources_json)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                    cursor = conn.cursor()
+                    if not conversation_id:
+                        # Auto-create new conversation thread
+                        conversation_id = secrets.token_hex(8)
+                        title_snippet = question.strip()[:60] + ("..." if len(question.strip()) > 60 else "")
+                        cursor.execute("""
+                            INSERT INTO chat_conversations (id, user_id, user_phone, title, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """, (conversation_id, current_user.get("id"), current_user.get("phone"), title_snippet))
+                    else:
+                        cursor.execute("""
+                            UPDATE chat_conversations
+                            SET updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ? AND (user_id = ? OR user_phone = ?)
+                        """, (conversation_id, current_user.get("id"), current_user.get("phone")))
+
+                    cursor.execute("""
+                        INSERT INTO chat_history (conversation_id, user_id, user_phone, question, answer, language, sources_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
+                        conversation_id,
                         current_user.get("id"),
                         current_user.get("phone"),
                         question,
@@ -2270,7 +3074,8 @@ def api_assistant():
             "confidence": round(best_score, 3),
             "context_service": context_service,
             "grounded": is_grounded,
-            "pii_redacted": pii_count
+            "pii_redacted": pii_count,
+            "conversation_id": conversation_id
         })
 
     except Exception as e:

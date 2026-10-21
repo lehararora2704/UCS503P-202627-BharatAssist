@@ -815,6 +815,8 @@
         document.getElementById("contextIndicator");
 
     let activeServiceName = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentConversationId = urlParams.get("c") || null;
 
     /* ==========================================
        INTERNATIONALIZATION (i18n) DICTIONARY
@@ -2002,7 +2004,8 @@
                         body: JSON.stringify({
                             question: question,
                             language: languageSelect.value,
-                            context_service: activeServiceName
+                            context_service: activeServiceName,
+                            conversation_id: currentConversationId
                         })
                     }
                 );
@@ -2029,6 +2032,10 @@
                     const answerText =
                         data.answer ||
                         "I could not generate an answer for that question.";
+
+                    if (data.conversation_id) {
+                        currentConversationId = data.conversation_id;
+                    }
 
                     addAiMessage(
                         answerText,
@@ -2453,6 +2460,22 @@ if (clearConversationBtn) {
         }
         applyLanguage(initialLang);
         loadChatHistory();
+
+        // If continuing an existing thread from Chat History (?c=xyz), load and display it
+        if (currentConversationId && IS_AUTHENTICATED) {
+            fetch(`/api/conversations/${currentConversationId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+                        data.messages.forEach(m => {
+                            addUserMessage(m.question);
+                            addAiMessage(m.answer, m.sources || []);
+                        });
+                        scrollChatToBottom();
+                    }
+                })
+                .catch(err => console.warn("Could not preload thread:", err));
+        }
     });
 
     // Also run immediately in case DOM is already parsed

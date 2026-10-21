@@ -259,22 +259,37 @@
                         </div>
 
 
-                        <span
-                            class="badge
-                                   px-3 py-2
-                                   rounded-pill"
-                            style="
-                                background:rgba(19,136,8,0.12);
-                                color:#138808;
-                                border:1px solid
-                                rgba(19,136,8,0.3);
-                            "
-                        >
-                            <i class="fa-solid fa-shield-halved me-1"></i>
-                            Verified Service
-                        </span>
+                        <div class="d-flex align-items-center gap-2">
+                            <button
+                                type="button"
+                                id="btnSaveToMyApplications"
+                                class="btn btn-sm btn-tricolor px-3 py-2 fw-semibold"
+                                onclick="saveServiceToApplications({{ service.id }})"
+                            >
+                                <i class="fa-solid fa-bookmark me-1"></i>
+                                Save to My Applications
+                            </button>
+
+                            <span
+                                class="badge
+                                       px-3 py-2
+                                       rounded-pill"
+                                style="
+                                    background:rgba(19,136,8,0.12);
+                                    color:#138808;
+                                    border:1px solid
+                                    rgba(19,136,8,0.3);
+                                "
+                            >
+                                <i class="fa-solid fa-shield-halved me-1"></i>
+                                Verified Service
+                            </span>
+                        </div>
 
                     </div>
+
+                    <!-- Save Feedback Toast Banner -->
+                    <div id="saveFeedbackAlert" class="alert alert-success d-none m-3 shadow-sm" role="alert"></div>
 
                 </div>
 
@@ -693,4 +708,60 @@
 
 </div>
 
-{% endblock %}
+{% block extra_js %}
+<script>
+async function saveServiceToApplications(serviceId) {
+    const btn = document.getElementById("btnSaveToMyApplications");
+    const alertBox = document.getElementById("saveFeedbackAlert");
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+    try {
+        const resp = await fetch("/api/applications/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ service_id: serviceId })
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            alertBox.className = "alert alert-success m-3 shadow-sm";
+            alertBox.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fa-solid fa-circle-check me-2"></i> ${data.message}
+                    </div>
+                    <a href="/applications/${data.application_id}" class="btn btn-sm btn-success fw-bold text-white">
+                        Open Checklist <i class="fa-solid fa-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            `;
+            alertBox.classList.remove("d-none");
+            btn.innerHTML = '<i class="fa-solid fa-bookmark-check me-1"></i> Saved to Applications';
+        } else {
+            alertBox.className = "alert alert-warning m-3 shadow-sm";
+            if (resp.status === 401) {
+                alertBox.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><i class="fa-solid fa-lock me-2"></i> Please sign in to save checklists to your citizen account.</div>
+                        <a href="/login?next=/services/${serviceId}" class="btn btn-sm btn-outline-primary fw-semibold">Sign In</a>
+                    </div>
+                `;
+            } else {
+                alertBox.innerHTML = `<i class="fa-solid fa-circle-exclamation me-2"></i> ${data.error || "Could not save application."}`;
+            }
+            alertBox.classList.remove("d-none");
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-bookmark me-1"></i> Save to My Applications';
+        }
+    } catch (err) {
+        alertBox.className = "alert alert-danger m-3 shadow-sm";
+        alertBox.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-2"></i> Connection error saving application.';
+        alertBox.classList.remove("d-none");
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bookmark me-1"></i> Save to My Applications';
+    }
+}
+</script>
+{% endblock %}

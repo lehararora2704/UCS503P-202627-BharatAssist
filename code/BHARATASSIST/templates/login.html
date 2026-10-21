@@ -246,8 +246,11 @@
                             </span>
                             
                             <div class="d-grid gap-2 mt-4">
-                                <a href="{{ url_for('index') }}" class="btn btn-tricolor py-2 fw-semibold">
-                                    <i class="fa-solid fa-house me-2"></i> Go to Homepage
+                                <a href="{{ url_for('profile') }}" class="btn btn-tricolor py-2 fw-semibold">
+                                    <i class="fa-solid fa-id-card me-2"></i> View Citizen Profile & Account
+                                </a>
+                                <a href="{{ url_for('my_applications') }}" class="btn btn-outline-primary py-2 fw-semibold" style="border-color: rgba(0, 0, 128, 0.35); color: var(--navy);">
+                                    <i class="fa-solid fa-clipboard-check me-2 text-saffron"></i> My Saved Applications
                                 </a>
                                 <a href="{{ url_for('assistant') }}" class="btn btn-outline-secondary py-2 fw-semibold">
                                     <i class="fa-solid fa-robot me-2"></i> Open AI Civic Assistant
