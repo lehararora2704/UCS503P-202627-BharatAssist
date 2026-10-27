@@ -2925,6 +2925,14 @@ def api_assistant():
             is_grounded = False
             answer = match_result.get("message")
 
+        elif match_status == "civic_advisory":
+            session["active_service"] = match_result.get("active_context_service")
+            context_service = match_result.get("active_context_service")
+            is_grounded = match_result.get("grounded", False)
+            answer = match_result.get("answer")
+            sources = match_result.get("sources", [])
+            best_score = 0.95 if is_grounded else 0.0
+
         elif match_status == "category_discovery":
             session["active_service"] = None
             cat_services = match_result.get("services", [])
