@@ -1811,9 +1811,13 @@
 
         let text = raw.trim();
 
-        // 1. Headings: ### Heading or ## Heading
+        // 1. Headings: #### Heading, ### Heading or ## Heading
+        text = text.replace(/^####\s*(.+)$/gm, '<div class="fw-bold fs-6 mt-3 mb-1 text-primary"><i class="fa-solid fa-circle-chevron-right me-1"></i>$1</div>');
         text = text.replace(/^###\s*(.+)$/gm, '<div class="fw-bold fs-6 mt-3 mb-1 text-primary"><i class="fa-solid fa-circle-chevron-right me-1"></i>$1</div>');
         text = text.replace(/^##\s*(.+)$/gm, '<div class="fw-bold fs-6 mt-3 mb-1 text-primary"><i class="fa-solid fa-circle-chevron-right me-1"></i>$1</div>');
+
+        // Links: [label](url)
+        text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-primary text-decoration-underline fw-medium">$1 <i class="fa-solid fa-arrow-up-right-from-square small ms-1" style="font-size:0.75rem;"></i></a>');
 
         // 2. Bold text: **text** -> <strong>text</strong>
         text = text.replace(/\*\*([^*]+)\*\*/g, '<strong class="fw-semibold text-dark">$1</strong>');

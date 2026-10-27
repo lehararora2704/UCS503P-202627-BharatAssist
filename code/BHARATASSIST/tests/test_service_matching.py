@@ -116,10 +116,22 @@ class DynamicServiceMatchingTestSuite(unittest.TestCase):
         self.assertTrue(data.get("grounded"))
         self.assertEqual(data.get("context_service"), "Vehicle Ownership Transfer")
 
-    def test_unsupported_gun_license_declined(self):
-        """Negative test: Gun license is not in database -> Declines politely, no hallucination."""
+    def test_arms_gun_license_supported(self):
+        """Arms / Gun license is supported via official MHA NDAL-ALIS portal."""
         res = self.client.post("/api/assistant", json={
             "question": "How to get a gun license in India?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Arms / Gun Licence Application (NDAL-ALIS)")
+
+    def test_unsupported_rocket_declined(self):
+        """Negative test: Explosive/rocket question -> Declines politely, no hallucination."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How to make an explosive missile?",
             "language": "English"
         })
         self.assertEqual(res.status_code, 200)

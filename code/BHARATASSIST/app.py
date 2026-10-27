@@ -2916,14 +2916,17 @@ def api_assistant():
         match_status = match_result.get("status")
 
         if match_status == "unsupported":
+            session["active_service"] = None
             is_grounded = False
             answer = llm.get_not_found_response(language=language)
 
         elif match_status == "clarification_needed":
+            session["active_service"] = None
             is_grounded = False
             answer = match_result.get("message")
 
         elif match_status == "category_discovery":
+            session["active_service"] = None
             cat_services = match_result.get("services", [])
             cat_title = match_result.get("category_title", "Government Schemes")
             cat_desc = match_result.get("category_description", "Available government schemes and services:")
@@ -2987,6 +2990,7 @@ def api_assistant():
             best_score = max(best_score, match_result.get("score", 0.5) / 10.0, 0.45)
 
         else:
+            session["active_service"] = None
             # Fallback or greeting
             if llm.is_conversational_greeting(sanitized_question):
                 is_grounded = False
@@ -3009,10 +3013,11 @@ def api_assistant():
         citizen_name = current_user.get("name") if current_user else None
 
         if answer is None:
-            if is_grounded and context_texts:
+            if is_grounded and (context_texts or match_result.get("service")):
                 answer = llm.generate_assistant_response(
                     question=sanitized_question,
                     context_chunks=context_texts,
+                    service=match_result.get("service"),
                     language=language,
                     citizen_name=citizen_name,
                     aspect_only=match_result.get("aspect_only")

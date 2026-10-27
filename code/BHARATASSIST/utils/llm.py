@@ -443,9 +443,226 @@ def simplify_document(text: str, language: str = "English") -> str:
 # UNIFIED CONVERSATIONAL AI ASSISTANT
 # ============================================================
 
+
+def format_service_response(
+    service: dict,
+    language: str = "English",
+    citizen_name: str = None,
+    aspect_only: str = None
+) -> str:
+    """
+    Format a government service record into a user-friendly, structured layout.
+    Displays:
+    1. Service Header (Name, Category, State)
+    2. 🎯 Eligibility Criteria
+    3. 📋 Step-by-Step Application Process (Numbered 1., 2., 3.)
+    4. 📄 Documents Required (Bulleted proofs)
+    5. 💰 Fees & Processing Time
+    6. 🔗 Official Portal & Helpful Tips
+    Supports concise single-aspect answers (fees, documents, eligibility, steps, processing_time).
+    """
+    if not isinstance(service, dict):
+        return ""
+
+    name = (service.get("name") or "Government Service").strip()
+    category = (service.get("category") or "Civic Service").strip()
+    state = (service.get("state") or "All India").strip()
+    eligibility_raw = (service.get("eligibility") or "").strip()
+    docs_raw = (service.get("documents_required") or "").strip()
+    steps_raw = service.get("steps")
+    fees_raw = (service.get("fees") or "As specified on official portal").strip()
+    ptime_raw = (service.get("processing_time") or "As specified on official portal").strip()
+    url = (service.get("source_url") or "https://www.india.gov.in/").strip()
+
+    # Step items extraction
+    if isinstance(steps_raw, list):
+        step_items = [str(s).strip() for s in steps_raw if str(s).strip()]
+    else:
+        steps_str = str(steps_raw or "").strip()
+        step_items = [s.strip() for s in re.split(r'(?:^|\s+)\d+\.\s+', steps_str) if s.strip()]
+        if not step_items and steps_str:
+            step_items = [steps_str]
+
+    # Document items extraction
+    if ";" in docs_raw:
+        doc_items = [d.strip() for d in docs_raw.split(";") if d.strip()]
+    elif "," in docs_raw and len(docs_raw) > 50:
+        doc_items = [d.strip() for d in re.split(r',\s*(?![^()]*\))', docs_raw) if d.strip()]
+    else:
+        doc_items = [docs_raw] if docs_raw else ["Valid Identity and Address proof as mandated by the issuing department."]
+
+    # Eligibility items
+    if ";" in eligibility_raw:
+        elig_items = [e.strip() for e in eligibility_raw.split(";") if e.strip()]
+    elif "." in eligibility_raw and len(eligibility_raw) > 70:
+        elig_items = [e.strip() for e in eligibility_raw.split(".") if e.strip()]
+    else:
+        elig_items = [eligibility_raw] if eligibility_raw else ["Indian citizens meeting the criteria specified by the issuing authority."]
+
+    # Multi-language dictionary for headers and tips
+    L = {
+        "English": {
+            "greeting": f"Hello {citizen_name}!" if citizen_name else None,
+            "intro": f"Here is the verified information for **{name}**:",
+            "elig_head": "### 🎯 Eligibility Criteria",
+            "steps_head": "### 📋 Step-by-Step Application Process",
+            "docs_head": "### 📄 Documents Required",
+            "fees_head": "### 💰 Fees & Processing Time",
+            "portal_head": "### 🔗 Official Portal & Guidelines",
+            "fee_label": "Government Fee",
+            "time_label": "Processing Time",
+            "portal_label": "Official Portal",
+            "tip": "(Tip: Always verify document details on the official government portal before final submission.)",
+            "fee_tip": "(Tip: Government fees are standardized; avoid paying any unauthorized agent fees.)",
+            "doc_tip": "(Tip: Ensure your name, date of birth, and parent's/spouse's name match across all submitted documents.)"
+        },
+        "Hindi": {
+            "greeting": f"नमस्ते {citizen_name} जी!" if citizen_name else None,
+            "intro": f"**{name}** के लिए सत्यापित सरकारी जानकारी नीचे दी गई है:",
+            "elig_head": "### 🎯 पात्रता (Eligibility Criteria)",
+            "steps_head": "### 📋 आवेदन प्रक्रिया (Step-by-Step Process)",
+            "docs_head": "### 📄 आवश्यक दस्तावेज़ (Documents Required)",
+            "fees_head": "### 💰 सरकारी शुल्क एवं समय सीमा (Fees & Time)",
+            "portal_head": "### 🔗 आधिकारिक पोर्टल (Official Portal)",
+            "fee_label": "सरकारी शुल्क",
+            "time_label": "कार्य दिवस (समय)",
+            "portal_label": "आधिकारिक वेबसाइट",
+            "tip": "(सुझाव: हमेशा आधिकारिक सरकारी पोर्टल या अधिकृत सेवा केंद्र से ही आवेदन करें।)",
+            "fee_tip": "(सुझाव: केवल निर्धारित सरकारी शुल्क ही दें; किसी भी अनधिकृत बिचौलिए से बचें।)",
+            "doc_tip": "(सुझाव: सुनिश्चित करें कि सभी प्रस्तुत दस्तावेज़ों में आपका नाम और जन्मतिथि एक समान हो।)"
+        },
+        "Punjabi": {
+            "greeting": f"ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ {citizen_name} ਜੀ!" if citizen_name else None,
+            "intro": f"**{name}** ਲਈ ਤਸਦੀਕਸ਼ੁਦਾ ਸਰਕਾਰੀ ਜਾਣਕਾਰੀ ਹੇਠਾਂ ਦਿੱਤੀ ਗਈ ਹੈ:",
+            "elig_head": "### 🎯 ਯੋਗਤਾ (Eligibility Criteria)",
+            "steps_head": "### 📋 ਅਰਜ਼ੀ ਦੇਣ ਦਾ ਤਰੀਕਾ (Step-by-Step Process)",
+            "docs_head": "### 📄 ਜ਼ਰੂਰੀ ਦਸਤਾਵੇਜ਼ (Documents Required)",
+            "fees_head": "### 💰 ਸਰਕਾਰੀ ਫੀਸ ਅਤੇ ਸਮਾਂ (Fees & Time)",
+            "portal_head": "### 🔗 ਅਧਿਕਾਰਤ ਪੋਰਟਲ (Official Portal)",
+            "fee_label": "ਸਰਕਾਰੀ ਫੀਸ",
+            "time_label": "ਅੰਦਾਜ਼ਨ ਸਮਾਂ",
+            "portal_label": "ਅਧਿਕਾਰਤ ਵੈੱਬਸਾਈਟ",
+            "tip": "(ਸੁਝਾਅ: ਸਿਰਫ਼ ਅਧਿਕਾਰਤ ਸਰਕਾਰੀ ਵੈੱਬਸਾਈਟ ਜਾਂ ਸੇਵਾ ਕੇਂਦਰ ਰਾਹੀਂ ਹੀ ਅਪਲਾਈ ਕਰੋ।)",
+            "fee_tip": "(ਸੁਝਾਅ: ਸਿਰਫ਼ ਨਿਰਧਾਰਿਤ ਸਰਕਾਰੀ ਫੀਸ ਹੀ ਅਦਾ ਕਰੋ।)",
+            "doc_tip": "(ਸੁਝਾਅ: ਯਕੀਨੀ ਬਣਾਓ ਕਿ ਸਾਰੇ ਦਸਤਾਵੇਜ਼ਾਂ ਵਿੱਚ ਤੁਹਾਡਾ ਨਾਮ ਅਤੇ ਜਨਮ ਮਿਤੀ ਇਕਸਾਰ ਹੋਵੇ।)"
+        },
+        "Bengali": {
+            "greeting": f"নমস্কার {citizen_name}!" if citizen_name else None,
+            "intro": f"**{name}**-এর জন্য যাচাইকৃত সরকারি তথ্য নিচে দেওয়া হলো:",
+            "elig_head": "### 🎯 যোগ্যতার মানদণ্ড (Eligibility Criteria)",
+            "steps_head": "### 📋 ধাপে ধাপে আবেদন প্রক্রিয়া (Step-by-Step Process)",
+            "docs_head": "### 📄 প্রয়োজনীয় কাগজপত্র (Documents Required)",
+            "fees_head": "### 💰 সরকারি ফি এবং সময়সীমা (Fees & Time)",
+            "portal_head": "### 🔗 অফিসিয়াল পোর্টাল (Official Portal)",
+            "fee_label": "সরকারি ফি",
+            "time_label": "আনুমানিক সময়সীমা",
+            "portal_label": "অফিসিয়াল ওয়েবসাইট",
+            "tip": "(পরামর্শ: সর্বদা অফিসিয়াল পোর্টাল বা অনুমোদিত কেন্দ্র থেকে আবেদন করুন।)",
+            "fee_tip": "(পরামর্শ: শুধুমাত্র নির্ধারিত সরকারি ফি প্রদান করুন।)",
+            "doc_tip": "(পরামর্শ: নিশ্চিত করুন যে সমস্ত নথিপত্রে নামের বানান ও জন্মতারিখ একই রয়েছে।)"
+        },
+        "Marathi": {
+            "greeting": f"नमस्कार {citizen_name} जी!" if citizen_name else None,
+            "intro": f"**{name}** साठी अधिकृत माहिती खालीलप्रमाणे आहे:",
+            "elig_head": "### 🎯 पात्रता निकष (Eligibility Criteria)",
+            "steps_head": "### 📋 अर्ज करण्याची सविस्तर प्रक्रिया (Step-by-Step Process)",
+            "docs_head": "### 📄 आवश्यक कागदपत्रे (Documents Required)",
+            "fees_head": "### 💰 सरकारी शुल्क आणि कालावधी (Fees & Time)",
+            "portal_head": "### 🔗 अधिकृत पोर्टल (Official Portal)",
+            "fee_label": "सरकारी शुल्क",
+            "time_label": "अंदाजे कालावधी",
+            "portal_label": "अधिकृत वेबसाइट",
+            "tip": "(महत्त्वाची टीप: अधिकृत सरकारी पोर्टल किंवा अधिकृत केंद्रावरूनच अर्ज करा.)",
+            "fee_tip": "(महत्त्वाची टीप: केवळ अधिकृत सरकारी शुल्कच भरा.)",
+            "doc_tip": "(महत्त्वाची टीप: सर्व कागदपत्रांवरील नाव व जन्मतारीख तपासलेली असावी.)"
+        }
+    }
+
+    t = L.get(language, L["English"])
+
+    # 1. Aspect-only handling (concise cards)
+    if aspect_only == "fees":
+        return (
+            f"### 💰 {t['fee_label']}: {name}\n\n"
+            f"* **{t['fee_label']}**: {fees_raw}\n"
+            f"* **{t['time_label']}**: {ptime_raw}\n"
+            f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+            f"*{t['fee_tip']}*"
+        )
+    elif aspect_only == "documents":
+        bullets = "\n".join([f"* {d}" for d in doc_items])
+        return (
+            f"{t['docs_head']}: {name}\n\n"
+            f"{bullets}\n\n"
+            f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+            f"*{t['doc_tip']}*"
+        )
+    elif aspect_only == "eligibility":
+        bullets = "\n".join([f"* {e}" for e in elig_items])
+        return (
+            f"{t['elig_head']}: {name}\n\n"
+            f"{bullets}\n\n"
+            f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+            f"*{t['tip']}*"
+        )
+    elif aspect_only == "steps":
+        numbered = "\n".join([f"{idx}. {s}" for idx, s in enumerate(step_items, 1)])
+        return (
+            f"{t['steps_head']}: {name}\n\n"
+            f"{numbered}\n\n"
+            f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+            f"*{t['tip']}*"
+        )
+    elif aspect_only == "processing_time":
+        return (
+            f"### ⏱️ {t['time_label']}: {name}\n\n"
+            f"* **{t['time_label']}**: {ptime_raw}\n"
+            f"* **{t['fee_label']}**: {fees_raw}\n"
+            f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+            f"*{t['tip']}*"
+        )
+
+    # 2. Complete, structured, user-friendly service overview
+    parts = []
+
+    if t.get("greeting"):
+        parts.append(f"{t['greeting']}\n\n{t['intro']}")
+    else:
+        parts.append(f"### 🏛️ {name}\n**Category**: {category} | **Jurisdiction**: {state}")
+
+    # Eligibility
+    elig_text = "\n".join([f"* {e}" for e in elig_items])
+    parts.append(f"{t['elig_head']}\n{elig_text}")
+
+    # Steps
+    steps_text = "\n".join([f"{idx}. {s}" for idx, s in enumerate(step_items, 1)])
+    parts.append(f"{t['steps_head']}\n{steps_text}")
+
+    # Documents
+    docs_text = "\n".join([f"* {d}" for d in doc_items])
+    parts.append(f"{t['docs_head']}\n{docs_text}")
+
+    # Fees & Time
+    parts.append(
+        f"{t['fees_head']}\n"
+        f"* **{t['fee_label']}**: {fees_raw}\n"
+        f"* **{t['time_label']}**: {ptime_raw}"
+    )
+
+    # Portal
+    parts.append(
+        f"{t['portal_head']}\n"
+        f"* **{t['portal_label']}**: [{url}]({url})\n\n"
+        f"*{t['tip']}*"
+    )
+
+    return "\n\n".join(parts)
+
+
 def generate_assistant_response(
     question: str,
     context_chunks: list = None,
+    service: dict = None,
     language: str = "English",
     citizen_name: str = None,
     aspect_only: str = None
@@ -519,8 +736,12 @@ Answer in {lang_key}:"""
 
 
     # 2. Verified database context is available
-    if not is_llm_available():
-        return "<strong>Verified Information:</strong><br><br>" + "<br><br>".join(context_chunks)
+    if service:
+        # If Gemini is not available, return guaranteed user-friendly structured layout
+        if not is_llm_available():
+            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only)
+    elif not is_llm_available():
+        return "<br><br>".join(context_chunks)
 
     context_str = (
         "--- VERIFIED GOVERNMENT SERVICE CONTEXT ---\n"
@@ -594,8 +815,10 @@ BharatAssist:"""
         return text_resp
     except Exception as e:
         print("Gemini assistant generation error:", repr(e))
+        if service:
+            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only)
         if context_chunks:
-            return "<strong>Verified Information:</strong><br><br>" + "<br><br>".join(context_chunks)
+            return "<br><br>".join(context_chunks)
         return get_not_found_response(language=lang_key)
 
 

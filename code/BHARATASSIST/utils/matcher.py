@@ -21,33 +21,35 @@ ACTION_KEYWORDS = {
     "update": [
         "update", "change", "modify", "edit", "shift", "moved", "moving",
         "changed", "updating", "changing", "address change", "update address",
-        "change address", "mobile update", "phone update"
+        "change address", "mobile update", "phone update", "अपडेट", "बदलना", "बदलाव", "सुधार", "ਅਪਡੇਟ", "ਬਦਲਣਾ"
     ],
     "correction": [
         "correction", "correct", "fix", "rectify", "mistake", "spelling",
-        "wrong", "name change", "dob correction", "date of birth correction"
+        "wrong", "name change", "dob correction", "date of birth correction", "संशोधन", "ਸੁਧਾਰ"
     ],
     "renewal": [
         "renew", "renewal", "renewing", "expire", "expired", "re-issue",
-        "reissue", "extend", "validity"
+        "reissue", "extend", "validity", "नवीनीकरण", "ਰੀਨਿਊ"
     ],
     "replacement": [
         "duplicate", "lost", "damaged", "replacement", "replace",
-        "stolen", "missing", "misplaced", "reprint"
+        "stolen", "missing", "misplaced", "reprint", "डुप्लीकेट", "ਗੁੰਮ"
     ],
     "status_check": [
         "status", "track", "tracking", "check status", "application status",
-        "where is my", "dispatch status", "appointment status"
+        "where is my", "dispatch status", "appointment status", "स्थिति", "ਸਟੇਟਸ"
     ],
     "linking": [
-        "link", "linking", "linked", "seed", "seeding", "connect"
+        "link", "linking", "linked", "seed", "seeding", "connect", "जोड़ना", "ਲਿੰਕ"
     ],
     "transfer": [
-        "transfer", "ownership transfer", "change of ownership"
+        "transfer", "ownership transfer", "change of ownership", "तबादला", "ਟ੍ਰਾਂਸਫਰ"
     ],
     "new_application": [
         "apply", "application", "new", "fresh", "register", "registration",
-        "enrol", "enrolment", "make", "create", "issue", "get a new"
+        "enrol", "enrolment", "make", "create", "issue", "get a new",
+        "banwana", "banaye", "banvana", "karna hai", "karwana", "apply karna",
+        "अप्लाई", "आवेदन", "बनवाना", "बनवाएं", "नया", "रजिस्ट्रेशन", "ਅਪਲਾਈ", "ਬਣਵਾਉਣਾ", "ਨਵਾਂ", "ਬਣਾਉਣਾ"
     ]
 }
 
@@ -75,8 +77,6 @@ INFO_REQUEST_PATTERNS = {
 }
 
 UNSUPPORTED_DOMAINS = [
-    r"\b(?:gun|arms|weapon|pistol|rifle|firearm)\s*(?:license|licence|permit)?\b",
-    r"\b(?:liquor|wine|beer|alcohol|bar)\s*(?:shop|license|licence|permit|theka)\b",
     r"\b(?:cake|pizza|bake|cook|recipe|baking|cooking|food preparation)\b",
     r"\b(?:rocket|bomb|explosive|missile)\b",
     r"\b(?:phone to buy|best mobile|smartphone review|laptop to buy)\b",
@@ -93,24 +93,32 @@ GENERIC_AMBIGUOUS_PATTERNS = [
 
 # Canonical service anchors mapping common phrases/abbreviations to primary keywords
 CORE_SERVICE_SYNONYMS = {
-    "aadhaar": ["aadhaar", "aadhar", "adhar", "uidai", "uid"],
-    "pan": ["pan", "pan card", "pancard", "nsdl", "utiitsl", "incometax"],
-    "passport": ["passport", "tatkal", "passport seva", "psk"],
-    "driving_licence": ["driving licence", "driving license", "dl", "driver licence", "driver license", "learner licence", "learners licence", "learning licence"],
-    "voter": ["voter", "voter id", "epic", "election card", "nvsp", "eci"],
-    "ration": ["ration card", "rationcard", "ration", "pds", "nfsa"],
-    "vehicle": ["vehicle", "rc", "registration certificate", "car registration", "bike registration", "vahan"],
-    "pf": ["pf", "epf", "epfo", "provident fund", "uan"],
-    "esic": ["esic", "esi", "employee state insurance"],
-    "ayushman": ["ayushman", "pmjay", "pm-jay", "golden card", "health card"],
-    "pmkisan": ["pm kisan", "pm-kisan", "pmkisan", "kisan samman"],
-    "eshram": ["e-shram", "eshram", "shram card"],
-    "birth_cert": ["birth certificate", "birth cert"],
-    "death_cert": ["death certificate", "death cert"],
-    "marriage_cert": ["marriage certificate", "marriage registration"],
-    "caste_cert": ["caste certificate", "community certificate", "obc certificate", "sc certificate", "st certificate"],
-    "income_cert": ["income certificate"],
-    "domicile_cert": ["domicile certificate", "residence certificate", "prc"],
+    "aadhaar": ["aadhaar", "aadhar", "adhar", "uidai", "uid", "आधार", "ਆਧਾਰ", "आधार कार्ड", "ਆਧਾਰ ਕਾਰਡ"],
+    "pan": ["pan", "pan card", "pancard", "nsdl", "utiitsl", "incometax", "पैन", "पैन कार्ड", "ਪੈਨ ਕਾਰਡ"],
+    "passport": ["passport", "tatkal", "passport seva", "psk", "पासपोर्ट", "ਪਾਸਪੋਰਟ"],
+    "driving_licence": ["driving licence", "driving license", "dl", "driver licence", "driver license", "learner licence", "learners licence", "learning licence", "ड्राइविंग लाइसेंस", "ਡਰਾਈਵਿੰਗ ਲਾਇਸੈਂਸ", "लाइसेंस", "ਲਾਇਸੈਂਸ"],
+    "liquor_license": ["liquor license", "liquor licence", "liquor permit", "bar license", "bar licence", "alcohol permit", "excise license", "excise licence", "beer license", "wine license", "party liquor permit", "occasional liquor permit", "commercial liquor", "theka", "liquor", "alcohol licence", "alcohol license", "beer bar", "शराब", "शराब लाइसेंस", "ठेका", "दारू", "ਸ਼ਰਾਬ ਲਾਇਸੈਂਸ"],
+    "arms_license": ["arms license", "arms licence", "gun license", "gun licence", "pistol license", "weapon license", "rifle license", "firearm license", "firearm licence", "ndal", "alis", "हथियार", "बंदूक लाइसेंस"],
+    "trade_license": ["trade license", "trade licence", "shop license", "shop licence", "shop and establishment", "commercial licence", "commercial license", "municipal trade", "ट्रेड लाइसेंस", "दुकान लाइसेंस"],
+    "fire_noc": ["fire noc", "fire safety", "fire license", "fire licence", "fire safety certificate", "फायर एनओसी"],
+    "senior_citizen": ["senior citizen", "senior citizen card", "elderly card", "old age card", "senior citizen certificate", "वरिष्ठ नागरिक", "बुजुर्ग कार्ड"],
+    "udid": ["udid", "disability card", "disability certificate", "handicapped certificate", "divyang card", "swavlamban", "दिव्यांग", "विकलांग कार्ड"],
+    "ews": ["ews", "ews certificate", "economically weaker section", "income and asset certificate", "ईडब्ल्यूएस"],
+    "legal_heir": ["legal heir", "varisu", "surviving member", "succession certificate", "heirship", "वारिस"],
+    "voter": ["voter", "voter id", "epic", "election card", "nvsp", "eci", "वोटर आईडी", "ਵੋਟਰ ਕਾਰਡ", "मतदाता पहचान पत्र"],
+    "ration": ["ration card", "rationcard", "ration", "pds", "nfsa", "राशन कार्ड", "ਰਾਸ਼ਨ ਕਾਰਡ"],
+    "vehicle": ["vehicle", "rc", "registration certificate", "car registration", "bike registration", "vahan", "वाहन पंजीकरण", "आरसी"],
+    "pf": ["pf", "epf", "epfo", "provident fund", "uan", "पीएफ"],
+    "esic": ["esic", "esi", "employee state insurance", "ईएसआईसी"],
+    "ayushman": ["ayushman", "pmjay", "pm-jay", "golden card", "health card", "आयुष्मान", "गोल्डन कार्ड"],
+    "pmkisan": ["pm kisan", "pm-kisan", "pmkisan", "kisan samman", "पीएम किसान"],
+    "eshram": ["e-shram", "eshram", "shram card", "ई-श्रम"],
+    "birth_cert": ["birth certificate", "birth cert", "जन्म प्रमाण पत्र", "ਜਨਮ ਸਰਟੀਫਿਕੇਟ"],
+    "death_cert": ["death certificate", "death cert", "मृत्यु प्रमाण पत्र", "ਮੌਤ ਸਰਟੀਫਿਕੇਟ"],
+    "marriage_cert": ["marriage certificate", "marriage registration", "विवाह प्रमाण पत्र", "ਵਿਆਹ ਸਰਟੀਫਿਕੇਟ"],
+    "caste_cert": ["caste certificate", "community certificate", "obc certificate", "sc certificate", "st certificate", "जाति प्रमाण पत्र", "ਜਾਤੀ ਸਰਟੀਫਿਕੇਟ"],
+    "income_cert": ["income certificate", "आय प्रमाण पत्र", "ਆਮਦਨ ਸਰਟੀਫਿਕੇਟ"],
+    "domicile_cert": ["domicile certificate", "residence certificate", "prc", "निवास प्रमाण पत्र", "मूल निवास", "ਰਿਹਾਇਸ਼ੀ ਸਰਟੀਫਿਕੇਟ"],
     "scholarship": ["scholarship", "nsp", "national scholarship"],
     "udyam": ["udyam", "msme registration"],
     "gst": ["gst", "gstin", "goods and services tax registration"],
@@ -393,12 +401,11 @@ def extract_matched_service_intent(
 
     if not user_entities and active_ctx_svc:
         # Check if query is asking for information, action, or referring by pronoun/implicit reference
-        is_follow_up_aspect = bool(detected_info or detected_actions)
-        is_implicit_ref = any(re.search(rf"\b{w}\b", q_lower) for w in ["it", "this", "that", "same", "charges", "cost", "fee", "fees", "paper", "papers", "detail", "details"])
-        # Short query check (e.g. "fees", "how much", "documents needed", "how long", "what next")
-        is_short_prompt = len(q_lower.split()) <= 6
-
-        if is_follow_up_aspect or is_implicit_ref or is_short_prompt:
+        is_follow_up_aspect = bool(detected_info)
+        is_implicit_ref = any(re.search(rf"\b{w}\b", q_lower) for w in ["it", "this", "that", "same", "charges", "cost", "fee", "fees", "paper", "papers", "detail", "details", "documents", "procedure", "steps"])
+        
+        # Follow up only if user is actively inquiring about aspects/details of the current active service
+        if is_follow_up_aspect or is_implicit_ref:
             aspect_only = is_aspect_only_follow_up(q_lower, detected_info)
             return {
                 "status": "matched",
@@ -455,7 +462,7 @@ def extract_matched_service_intent(
             # Word overlap with name
             overlap = name_tokens.intersection(query_tokens)
             # Penalize generic stop words
-            significant_overlap = [w for w in overlap if w not in {"and", "or", "for", "the", "in", "of", "to", "card", "service", "registration", "application"}]
+            significant_overlap = [w for w in overlap if w not in {"and", "or", "for", "the", "in", "of", "to", "card", "service", "registration", "application", "license", "licence", "permit", "certificate", "portal", "online"}]
             score += len(significant_overlap) * 1.5
 
         # Check domain synonyms & entity overlap
@@ -469,6 +476,14 @@ def extract_matched_service_intent(
                     score += 3.0
 
         # Action congruence bonus
+        # 1. New application bonus / penalty (Crucial for e.g. "aadhar card apply" -> Aadhaar Enrolment, NOT Aadhaar Update)
+        if "new_application" in detected_actions:
+            if any(w in name_lower for w in ["enrolment", "fresh", "application", "new", "learner"]):
+                if not any(w in name_lower for w in ["update", "correction", "change", "duplicate", "renewal", "link", "transfer"]):
+                    score += 5.0
+            if any(w in name_lower for w in ["update", "correction", "change", "duplicate", "renewal", "link", "transfer"]):
+                score -= 4.0
+
         # If user asked for "update" / "change" / "address", and service name has "Update", "Change", "Re-issue", "Shift", boost!
         if any(act in ["update", "correction"] for act in detected_actions):
             if any(w in name_lower for w in ["update", "correction", "change", "reprint", "modification", "re-issue", "reissue", "shift"]):
