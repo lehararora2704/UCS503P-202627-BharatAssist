@@ -3020,7 +3020,9 @@ def api_assistant():
                     service=match_result.get("service"),
                     language=language,
                     citizen_name=citizen_name,
-                    aspect_only=match_result.get("aspect_only")
+                    aspect_only=match_result.get("aspect_only"),
+                    detected_state=match_result.get("detected_state"),
+                    undocumented_action=match_result.get("undocumented_action")
                 )
             elif llm.is_conversational_greeting(sanitized_question):
                 answer = llm.get_greeting_response(

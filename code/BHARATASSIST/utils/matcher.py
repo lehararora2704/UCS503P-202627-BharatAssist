@@ -33,7 +33,12 @@ ACTION_KEYWORDS = {
     ],
     "replacement": [
         "duplicate", "lost", "damaged", "replacement", "replace",
-        "stolen", "missing", "misplaced", "reprint", "डुप्लीकेट", "ਗੁੰਮ"
+        "stolen", "missing", "misplaced", "reprint", "pvc", "pvc card", "डुप्लीकेट", "ਗੁੰਮ"
+    ],
+    "grievance": [
+        "grievance", "complaint", "complain", "report fraud", "report problem",
+        "consumer court", "consumer forum", "redressal", "cpgrams", "cyber crime",
+        "cyber fraud", "fir", "police complaint", "शिकायत", "ਸਿਕਾਇਤ"
     ],
     "status_check": [
         "status", "track", "tracking", "check status", "application status",
@@ -126,6 +131,10 @@ CORE_SERVICE_SYNONYMS = {
     "fir": ["fir", "police complaint", "lost report"],
     "property_reg": ["property registration", "registry", "sale deed"],
     "land_record": ["land record", "jamabandi", "khata", "khasra", "ror", "land mutation"],
+    "cpgrams": ["cpgrams", "pgportal", "public grievance", "grievance portal", "central grievance", "शिकायत"],
+    "consumer_forum": ["consumer court", "consumer forum", "consumer complaint", "edaakhil", "e-daakhil", "consumer helpline"],
+    "cyber_crime": ["cyber crime", "cyber fraud", "online fraud", "1930", "cyber helpline", "cyber police", "cyber complaint"],
+    "legal_aid": ["legal aid", "nalsa", "free legal services"],
 }
 
 
@@ -320,6 +329,116 @@ def is_aspect_only_follow_up(query: str, detected_info: List[str]) -> Optional[s
     return None
 
 
+INDIAN_STATES = {
+    "delhi": "Delhi",
+    "punjab": "Punjab",
+    "haryana": "Haryana",
+    "maharashtra": "Maharashtra",
+    "karnataka": "Karnataka",
+    "tamil nadu": "Tamil Nadu",
+    "uttar pradesh": "Uttar Pradesh",
+    "up": "Uttar Pradesh",
+    "bihar": "Bihar",
+    "rajasthan": "Rajasthan",
+    "gujarat": "Gujarat",
+    "west bengal": "West Bengal",
+    "kerala": "Kerala",
+    "telangana": "Telangana",
+    "andhra pradesh": "Andhra Pradesh",
+    "madhya pradesh": "Madhya Pradesh",
+    "mp": "Madhya Pradesh",
+    "odisha": "Odisha",
+    "assam": "Assam",
+    "jharkhand": "Jharkhand",
+    "chhattisgarh": "Chhattisgarh",
+    "uttarakhand": "Uttarakhand",
+    "himachal pradesh": "Himachal Pradesh",
+    "goa": "Goa",
+    "chandigarh": "Chandigarh",
+    "jammu and kashmir": "Jammu & Kashmir",
+    "j&k": "Jammu & Kashmir"
+}
+
+
+def detect_state(text: str) -> Optional[str]:
+    """Detect if the citizen explicitly mentioned an Indian state or Union Territory."""
+    q = text.lower()
+    for state_kw, state_formal in INDIAN_STATES.items():
+        if re.search(rf"\b{re.escape(state_kw)}\b", q):
+            return state_formal
+    return None
+
+
+def detect_aspect_only(query: str, detected_info: List[str]) -> Optional[str]:
+    """
+    Check if query is asking specifically for one aspect (fees, documents, eligibility, processing_time)
+    without asking for procedural steps or whole application instructions.
+    """
+    if not detected_info:
+        return None
+    q_clean = re.sub(r"[^\w\s]", "", query.lower()).strip()
+    # If user explicitly asks for steps / procedure, give full structured guide
+    procedural = ["how to apply", "how do i apply", "steps to apply", "steps", "procedure", "process", "where to apply", "how can i get", "apply karna", "banwana", "karna hai"]
+    if any(p in q_clean for p in procedural):
+        return None
+
+    if "fees" in detected_info:
+        if any(w in q_clean for w in ["fee", "fees", "cost", "charge", "charges", "price", "how much", "rate", "रुपये", "फीस"]):
+            return "fees"
+
+    if "documents" in detected_info:
+        if any(w in q_clean for w in ["document", "documents", "docs", "proof", "proofs", "paperwork", "दस्तावेज़", "कागजात"]):
+            return "documents"
+
+    if "processing_time" in detected_info:
+        if any(w in q_clean for w in ["processing time", "how long", "timeline", "duration", "kitne din", "how many days"]):
+            return "processing_time"
+
+    if "eligibility" in detected_info:
+        if any(w in q_clean for w in ["eligible", "eligibility", "who can apply", "age limit", "criteria", "who is eligible", "पात्रता"]):
+            return "eligibility"
+
+    return None
+
+
+def check_action_documented(service: Dict[str, Any], requested_actions: List[str]) -> Tuple[bool, Optional[str]]:
+    """
+    Check if the matched service record actually documents the action the user wants to perform
+    (e.g., renewal, correction, duplicate/replacement), or if it is merely a first-time application record.
+    Returns: (is_documented, undocumented_action_name_or_None)
+    """
+    if not requested_actions or not service:
+        return True, None
+
+    name_lower = (service.get("name") or "").lower()
+    steps_lower = str(service.get("steps") or "").lower()
+    docs_lower = str(service.get("documents_required") or "").lower()
+    record_text = f"{name_lower} {steps_lower} {docs_lower}"
+
+    for action in requested_actions:
+        if action == "renewal":
+            if not any(w in record_text for w in ["renew", "renewal", "re-issue", "reissue", "extend validity"]):
+                return False, "renewal"
+
+        elif action == "correction":
+            if not any(w in record_text for w in ["correction", "correct", "update", "modify", "modification", "rectify", "name change", "dob", "reprint"]):
+                return False, "correction"
+
+        elif action == "replacement":
+            if not any(w in record_text for w in ["duplicate", "replacement", "reprint", "lost", "damaged", "pvc"]):
+                return False, "duplicate/replacement"
+
+        elif action == "update":
+            if not any(w in record_text for w in ["update", "change", "modify", "modification", "shift", "re-issue", "reissue"]):
+                return False, "update"
+
+        elif action == "status_check":
+            if not any(w in record_text for w in ["status", "track", "tracking", "appointment"]):
+                return False, "status tracking"
+
+    return True, None
+
+
 def extract_matched_service_intent(
     query: str,
     services_catalog: List[Dict[str, Any]],
@@ -475,8 +594,7 @@ def extract_matched_service_intent(
                 if user_has_syn and svc_has_syn:
                     score += 3.0
 
-        # Action congruence bonus
-        # 1. New application bonus / penalty (Crucial for e.g. "aadhar card apply" -> Aadhaar Enrolment, NOT Aadhaar Update)
+        # Action congruence bonus & penalty
         if "new_application" in detected_actions:
             if any(w in name_lower for w in ["enrolment", "fresh", "application", "new", "learner"]):
                 if not any(w in name_lower for w in ["update", "correction", "change", "duplicate", "renewal", "link", "transfer"]):
@@ -484,34 +602,45 @@ def extract_matched_service_intent(
             if any(w in name_lower for w in ["update", "correction", "change", "duplicate", "renewal", "link", "transfer"]):
                 score -= 4.0
 
-        # If user asked for "update" / "change" / "address", and service name has "Update", "Change", "Re-issue", "Shift", boost!
         if any(act in ["update", "correction"] for act in detected_actions):
             if any(w in name_lower for w in ["update", "correction", "change", "reprint", "modification", "re-issue", "reissue", "shift"]):
-                score += 3.0
-            elif "application (fresh)" in name_lower or "fresh" in name_lower:
-                score -= 2.0  # Penalize fresh application when user specifically asked for correction/update
+                score += 5.0
+            if any(w in name_lower for w in ["application (fresh)", "fresh application"]):
+                score -= 4.0
+            elif name_lower.endswith("application") and not any(w in name_lower for w in ["update", "correction", "change", "reprint"]):
+                score -= 3.0
 
         if "renewal" in detected_actions:
-            if "renewal" in name_lower or "re-issue" in name_lower:
-                score += 3.0
-            elif "learner" in name_lower and "driving licence" in q_lower:
-                score -= 1.5
-
-        if "status_check" in detected_actions:
-            if "status" in name_lower or "track" in name_lower:
-                score += 3.0
+            if any(w in name_lower for w in ["renewal", "re-issue", "reissue"]):
+                score += 5.0
+            if any(w in name_lower for w in ["application (fresh)", "fresh application", "learner"]):
+                score -= 4.0
+            elif name_lower.endswith("application") and not any(w in name_lower for w in ["renewal", "re-issue"]):
+                score -= 3.0
 
         if "replacement" in detected_actions:
-            if "duplicate" in name_lower or "replacement" in name_lower or "pvc" in name_lower:
-                score += 3.0
+            if any(w in name_lower for w in ["duplicate", "replacement", "reprint", "pvc"]):
+                score += 5.0
+            if any(w in name_lower for w in ["application (fresh)", "fresh application"]):
+                score -= 4.0
+            elif name_lower.endswith("application") and not any(w in name_lower for w in ["duplicate", "reprint", "replacement", "pvc"]):
+                score -= 3.0
+
+        if "status_check" in detected_actions:
+            if any(w in name_lower for w in ["status", "track", "tracking", "appointment"]):
+                score += 4.0
+
+        if "grievance" in detected_actions:
+            if any(w in name_lower for w in ["grievance", "complaint", "cyber crime", "consumer", "police", "fir", "redressal", "cpgrams"]):
+                score += 5.0
 
         if "transfer" in detected_actions:
             if "transfer" in name_lower:
-                score += 3.5
+                score += 4.0
 
         if "linking" in detected_actions:
             if "link" in name_lower:
-                score += 3.5
+                score += 4.0
 
         # Address specific boosting
         if any(w in q_lower for w in ["address", "residence", "shift", "relocate"]):
@@ -530,11 +659,17 @@ def extract_matched_service_intent(
                 "name": name
             })
 
+    detected_state = detect_state(clean_query)
+    aspect_only = detect_aspect_only(clean_query, detected_info)
+
     if not scored_candidates:
         return {
             "status": "not_found",
+            "decision": "unsupported",
             "service": None,
             "action": detected_actions,
+            "detected_state": detected_state,
+            "aspect_only": aspect_only,
             "message": "I am sorry, this information is not available in our database. May I help you with anything else?"
         }
 
@@ -542,23 +677,47 @@ def extract_matched_service_intent(
     scored_candidates.sort(key=lambda x: x["score"], reverse=True)
     best = scored_candidates[0]
 
-    # Verify minimum confidence
-    if best["score"] < 2.0 and best["vector_score"] < 0.35:
+    # Verify minimum confidence and prevent weak single-word match
+    if best["score"] < 2.5 and best["vector_score"] < 0.35:
         return {
             "status": "not_found",
+            "decision": "weak_match",
             "service": None,
             "action": detected_actions,
+            "detected_state": detected_state,
+            "aspect_only": aspect_only,
             "message": "I am sorry, this information is not available in our database. May I help you with anything else?"
         }
 
+    # Check for potential ambiguity between top 2 candidates
+    if len(scored_candidates) > 1:
+        second = scored_candidates[1]
+        if abs(best["score"] - second["score"]) < 0.5 and best["score"] < 4.0 and not user_entities:
+            return {
+                "status": "clarification_needed",
+                "decision": "potential_match_requiring_clarification",
+                "service": None,
+                "action": detected_actions,
+                "detected_state": detected_state,
+                "aspect_only": aspect_only,
+                "message": f"Did you mean **{best['name']}** or **{second['name']}**? Please specify so I can assist you with the exact procedure."
+            }
+
     matched_svc = best["service"]
+    is_doc, undoc_action = check_action_documented(matched_svc, detected_actions)
+
     return {
         "status": "matched",
+        "decision": "strongly_supported",
         "service": matched_svc,
         "score": best["score"],
         "vector_score": best["vector_score"],
         "detected_actions": detected_actions,
-        "detected_info": detected_info
+        "detected_info": detected_info,
+        "aspect_only": aspect_only,
+        "detected_state": detected_state,
+        "undocumented_action": undoc_action,
+        "action_documented": is_doc
     }
 
 

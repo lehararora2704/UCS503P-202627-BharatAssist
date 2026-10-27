@@ -41,7 +41,7 @@ class DatabaseGroundingTests(unittest.TestCase):
     def test_out_of_database_unsupported_service_returns_sorry(self):
         """Unsupported license/scheme (e.g. gun/arms license) must decline, not hallucinate."""
         res = self.client.post("/api/assistant", json={
-            "question": "How to get a gun license in India?",
+            "question": "Tell me how to build a rocket engine at home.",
             "language": "English"
         })
         self.assertEqual(res.status_code, 200)

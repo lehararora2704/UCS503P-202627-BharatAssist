@@ -448,7 +448,9 @@ def format_service_response(
     service: dict,
     language: str = "English",
     citizen_name: str = None,
-    aspect_only: str = None
+    aspect_only: str = None,
+    detected_state: str = None,
+    undocumented_action: str = None
 ) -> str:
     """
     Format a government service record into a user-friendly, structured layout.
@@ -625,18 +627,28 @@ def format_service_response(
     # 2. Complete, structured, user-friendly service overview
     parts = []
 
+    jurisdiction_display = f"{detected_state} (State Specific)" if detected_state else state
+
     if t.get("greeting"):
-        parts.append(f"{t['greeting']}\n\n{t['intro']}")
+        parts.append(f"{t['greeting']}\n\n{t['intro']}\n**Category**: {category} | **Jurisdiction**: {jurisdiction_display}")
     else:
-        parts.append(f"### 🏛️ {name}\n**Category**: {category} | **Jurisdiction**: {state}")
+        parts.append(f"### 🏛️ {name}\n**Category**: {category} | **Jurisdiction**: {jurisdiction_display}")
+
+    # If user requested an action not explicitly documented in this record, state that limitation clearly
+    if undocumented_action:
+        parts.append(
+            f"> ⚠️ **Action Note**: The official catalog record for **{name}** primarily outlines the initial registration and application procedure. Specific requirements and procedures for **{undocumented_action}** are not detailed in this record.\n"
+            f"> For verified **{undocumented_action}** guidelines, dedicated forms, and official fee structures, please consult the official portal directly at [{url}]({url})."
+        )
 
     # Eligibility
     elig_text = "\n".join([f"* {e}" for e in elig_items])
     parts.append(f"{t['elig_head']}\n{elig_text}")
 
     # Steps
+    steps_title = "### 📋 General Procedure & Application Steps" if undocumented_action else t['steps_head']
     steps_text = "\n".join([f"{idx}. {s}" for idx, s in enumerate(step_items, 1)])
-    parts.append(f"{t['steps_head']}\n{steps_text}")
+    parts.append(f"{steps_title}\n{steps_text}")
 
     # Documents
     docs_text = "\n".join([f"* {d}" for d in doc_items])
@@ -649,12 +661,13 @@ def format_service_response(
         f"* **{t['time_label']}**: {ptime_raw}"
     )
 
-    # Portal
-    parts.append(
-        f"{t['portal_head']}\n"
-        f"* **{t['portal_label']}**: [{url}]({url})\n\n"
-        f"*{t['tip']}*"
-    )
+    # Portal & Tips
+    portal_text = f"{t['portal_head']}\n* **{t['portal_label']}**: [{url}]({url})\n\n*{t['tip']}*"
+    # If state-administered service and no state was specified, add helpful state note
+    state_sensitive = any(w in category.lower() for w in ["certificate", "municipal", "ration", "land", "revenue", "welfare"])
+    if state_sensitive and not detected_state:
+        portal_text += "\n*(Tip: This service is administered by state and UT authorities. If you require state-specific application links or forms, please mention your State or Union Territory.)*"
+    parts.append(portal_text)
 
     return "\n\n".join(parts)
 
@@ -665,7 +678,9 @@ def generate_assistant_response(
     service: dict = None,
     language: str = "English",
     citizen_name: str = None,
-    aspect_only: str = None
+    aspect_only: str = None,
+    detected_state: str = None,
+    undocumented_action: str = None
 ) -> str:
     """
     Unified, intelligent conversational assistant engine.
@@ -739,7 +754,7 @@ Answer in {lang_key}:"""
     if service:
         # If Gemini is not available, return guaranteed user-friendly structured layout
         if not is_llm_available():
-            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only)
+            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only, detected_state=detected_state, undocumented_action=undocumented_action)
     elif not is_llm_available():
         return "<br><br>".join(context_chunks)
 
@@ -816,7 +831,7 @@ BharatAssist:"""
     except Exception as e:
         print("Gemini assistant generation error:", repr(e))
         if service:
-            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only)
+            return format_service_response(service, language=lang_key, citizen_name=citizen_name, aspect_only=aspect_only, detected_state=detected_state, undocumented_action=undocumented_action)
         if context_chunks:
             return "<br><br>".join(context_chunks)
         return get_not_found_response(language=lang_key)

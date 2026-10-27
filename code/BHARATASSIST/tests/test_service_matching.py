@@ -278,6 +278,139 @@ class DynamicServiceMatchingTestSuite(unittest.TestCase):
         self.assertTrue("e-Shram" in ans or "Employment" in ans or "EPFO" in ans)
 
 
+
+    def test_duplicate_pan_card_intent(self):
+        """Duplicate PAN Card request -> Maps to PAN Card Correction or Reprint, not fresh application."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How to get a duplicate PAN card?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "PAN Card Correction or Reprint")
+        self.assertNotEqual(data.get("context_service"), "PAN Card Application")
+
+    def test_name_correction_pan_card(self):
+        """Name correction in PAN Card -> Maps to PAN Card Correction or Reprint, not fresh application."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How do I correct my name in PAN card?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "PAN Card Correction or Reprint")
+        self.assertNotEqual(data.get("context_service"), "PAN Card Application")
+
+    def test_aadhar_apply_vs_update_discrimination(self):
+        """'aadhar card apply' -> Maps to Aadhaar Enrolment (Fresh), not Aadhaar Update."""
+        res = self.client.post("/api/assistant", json={
+            "question": "aadhar card apply",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Aadhaar Enrolment")
+        self.assertNotEqual(data.get("context_service"), "Aadhaar Update")
+
+    def test_liquor_licence_discrimination_from_driving_licence(self):
+        """Liquor Licence inquiry -> Returns Liquor Licence, never confuses with Driving Licence."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How do I apply for a liquor licence?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Liquor Licence (Commercial / Bar / Restaurant / Retail Shop)")
+        self.assertNotIn("driving", data.get("answer", "").lower())
+        self.assertNotIn("parivahan", str(data.get("sources", [])).lower())
+
+    def test_vehicle_rc_duplicate_intent(self):
+        """Duplicate Vehicle RC -> Maps to Vehicle Registration Certificate Duplicate."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How to get duplicate RC book for vehicle?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Vehicle Registration Certificate Duplicate")
+        self.assertNotEqual(data.get("context_service"), "Driving Licence Duplicate")
+
+    def test_grievance_consumer_complaint(self):
+        """Consumer complaint filing -> Maps to Consumer Complaint e-Daakhil."""
+        res = self.client.post("/api/assistant", json={
+            "question": "how to file a consumer complaint against a shop",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Consumer Complaint e-Daakhil")
+
+    def test_grievance_cyber_crime(self):
+        """Cyber crime reporting -> Maps to Cyber Crime Complaint."""
+        res = self.client.post("/api/assistant", json={
+            "question": "how to file a cyber crime complaint",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Cyber Crime Complaint")
+
+    def test_aspect_only_fees_concise_response(self):
+        """Aspect-only inquiry: 'What is the fee for PAN card?' -> Returns concise fee response without dumping full steps."""
+        res = self.client.post("/api/assistant", json={
+            "question": "What is the fee for PAN card?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "PAN Card Application")
+        self.assertIn("Government Fee", data.get("answer"))
+        self.assertNotIn("### 📋 Step-by-Step", data.get("answer"))
+
+    def test_state_specific_inquiry_delhi(self):
+        """State-specific question: 'How do I apply for a ration card in Delhi?' -> Mentions Delhi jurisdiction."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How do I apply for a ration card in Delhi?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Ration Card (New Application)")
+        self.assertIn("Delhi", data.get("answer"))
+
+    def test_undocumented_action_limitation_warning(self):
+        """Undocumented action: 'How to renew birth certificate?' -> Explains action limitation clearly."""
+        res = self.client.post("/api/assistant", json={
+            "question": "How to renew birth certificate?",
+            "language": "English"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertTrue(data.get("grounded"))
+        self.assertEqual(data.get("context_service"), "Birth Certificate")
+        self.assertIn("Action Note", data.get("answer"))
+        self.assertIn("crsorgi.gov.in", data.get("answer"))
+
+
 if __name__ == "__main__":
     unittest.main()
 
