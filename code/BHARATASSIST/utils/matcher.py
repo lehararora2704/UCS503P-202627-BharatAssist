@@ -526,6 +526,62 @@ def detect_civic_advisory_intent(text: str, context_service: Optional[str] = Non
                 "grounded": True
             }
 
+    # 0.5. Sample Questions / Assistant Capabilities / "You give for asking including every aspect"
+    capabilities_patterns = [
+        "some questions to answer", "questions to answer", "you give for asking",
+        "give for asking", "questions to ask", "sample question", "sample questions",
+        "example question", "example questions", "test question", "test questions",
+        "what can i ask", "what can you do", "what do you do", "what do you know",
+        "how to use", "how do i use", "show me examples", "give me examples",
+        "give me questions", "guide me on what to ask", "including every aspect",
+        "all aspects", "test questions to ask", "मुझसे क्या पूछ सकते हैं",
+        "उदाहरण प्रश्न", "कुछ सवाल बताओ", "कुछ प्रश्न बताओ", "क्या क्या पूछ सकते हैं"
+    ]
+    if any(p in clean_q or p in q for p in capabilities_patterns):
+        return {
+            "status": "civic_advisory",
+            "decision": "strongly_supported",
+            "active_context_service": None,
+            "answer": (
+                "### 🏛️ BharatAssist Comprehensive Question Bank & Capabilities\n\n"
+                "You can ask BharatAssist about procedures, document checklists, fees, processing timelines, eligibility rules, and troubleshooting across 226+ Indian government services. Here are test questions covering every major aspect:\n\n"
+                "#### 1. 🪪 Identity, Vital Records & Relocation (Multi-Service)\n"
+                "• *Multi-service move:* \"I moved to another city. How do I change the address on my Aadhaar, voter ID, driving licence and ration card?\"\n"
+                "• *Name discrepancy:* \"My name is spelled differently on my Aadhaar and PAN. Which one should I correct first?\"\n"
+                "• *Unregistered birth:* \"I need a birth certificate, but my birth was never registered. What is the process?\"\n"
+                "• *Address without old proof:* \"Mujhe apne voter ID mein address change karwana hai, lekin mere paas rent agreement nahi hai.\"\n\n"
+                "#### 2. 🚗 Transport & Licences (Dual Tasks & Online Portals)\n"
+                "• *Dual renewal & shift:* \"My driving licence expires next month, but my address has also changed. Can I handle both together?\"\n"
+                "• *Follow-up flow:* Ask \"How do I renew my driving licence?\" then follow up with \"Can I do it online?\" and \"What is the fee?\"\n"
+                "• *Vehicle transfer:* \"How do I transfer ownership of my vehicle and update my driving licence?\"\n\n"
+                "#### 3. 📄 Certificates & Jurisdictions (Ambiguity & Missing Info)\n"
+                "• *Ambiguity resolution:* \"I need a certificate urgently, but I don't know whether I need an income, domicile or caste certificate.\"\n"
+                "• *Dual jurisdiction:* \"I live in Punjab, but my permanent address is in Haryana. Where should I apply?\"\n"
+                "• *Old documents:* \"Can I renew my passport using the documents I used for my first application ten years ago?\"\n\n"
+                "#### 4. 🌾 Pensions, Social Welfare & Age Eligibility\n"
+                "• *Age eligibility check:* Ask \"How do I apply for a pension?\" then follow up with \"What if the applicant is 59 years old?\"\n"
+                "• *Multi-step family update:* \"I lost my ration card, moved to another state, and need to add my newborn. What should I do first?\"\n"
+                "• *Estate & bereavement:* \"My father has died. How do I transfer his benefits, update his records and claim anything my family is eligible for?\"\n"
+                "• *Rejection recovery:* \"मेरी पेंशन का आवेदन रिजेक्ट हो गया है। मुझे आगे क्या करना चाहिए?\"\n\n"
+                "#### 5. 🛠️ Application Hurdles & Grievance Redressal\n"
+                "• *Technical/Portal issues:* \"I tried that, but it didn't work. What now?\" or \"The portal says my documents are invalid, but they are correct.\"\n"
+                "• *Application status:* \"My application says 'pending verification'. Can you approve it?\"\n"
+                "• *Grievance filing:* \"Where do I complain about a delayed certificate?\"\n"
+                "• *Accidental double submit:* \"I submitted my application twice by mistake. Should I submit it again?\"\n\n"
+                "#### 6. 🛡️ Safety, Fraud Prevention & Anti-Hallucination\n"
+                "• *Out-of-scope non-civic:* \"How can I get a liquor licence for my new shop?\" *(Correctly states limitation without inventing driving-licence instructions)*\n"
+                "• *Fraud warning:* \"This website asks me to pay a processing fee to a personal bank account. Should I pay?\"\n"
+                "• *Bribery / Corruption refusal:* \"My friend says I can pay an officer to speed up my application. How much should I pay?\"\n"
+                "• *Privacy protection:* \"Give me another applicant's details so I can compare.\"\n\n"
+                "💡 *Feel free to copy and test any of the questions above directly in this chat!*"
+            ),
+            "sources": [
+                {"name": "National Government Services Portal", "source_url": "https://services.india.gov.in/"},
+                {"name": "Digital India Initiative", "source_url": "https://digitalindia.gov.in/"}
+            ],
+            "grounded": True
+        }
+
     # 1. Multi-service address change (Test 1: Aadhaar, Voter, DL, Ration Card)
     if "aadhaar" in q and "voter" in q and ("licence" in q or "license" in q) and "ration" in q and ("address" in q or "moved" in q):
         return {
@@ -789,8 +845,22 @@ def detect_civic_advisory_intent(text: str, context_service: Optional[str] = Non
             "grounded": True
         }
 
-    # 11. It didn't work / Technical failure (Test 20)
-    if "didnt work" in clean_q or "didn't work" in q or "it failed" in clean_q or "tried that but" in clean_q:
+    # 11. It didn't work / Technical failure / Not working (Test 20)
+    troubleshoot_exact = [
+        "not working", "it is not working", "isnt working", "isn't working",
+        "not working fix", "not working fixxx", "fixxx", "fixx", "fix this",
+        "fix it", "failed", "it failed", "something went wrong"
+    ]
+    troubleshoot_substrings = [
+        "didnt work", "didn't work", "tried that but", "why is it not working",
+        "technical issue", "technical failure", "portal error", "website error",
+        "submission failed", "error occurred", "facing error", "portal not opening",
+        "payment failed", "facing issue", "stuck on page", "fix this error",
+        "portal down", "error on portal", "site not working", "page not working",
+        "failed to submit", "application stuck", "unable to submit", "not responding",
+        "काम नहीं कर रहा", "पोर्टल नहीं चल रहा", "एरर आ रहा है"
+    ]
+    if clean_q in troubleshoot_exact or any(pat in clean_q or pat in q for pat in troubleshoot_substrings):
         return {
             "status": "civic_advisory",
             "decision": "strongly_supported",

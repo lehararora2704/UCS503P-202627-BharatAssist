@@ -9,6 +9,12 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
+# Ensure UTF-8 output encoding on Windows console
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
